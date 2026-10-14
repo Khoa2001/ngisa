@@ -1,10 +1,70 @@
 # agent-orchestration-kit
 
-The orchestrator kit and the research behind it, from the "hand-off" project: can an agent system ship production-quality software from a spec, and where must a human stay in the loop?
+An orchestrator kit for running several Claude Code agents in parallel on one repo, plus the research behind it, from the "hand-off" project: can an agent system ship production-quality software from a spec, and where must a human stay in the loop?
 
-- `CONTEXT.md`: the goals, hypotheses, decisions so far, runs, and open items. Start here.
-- `CLAUDE.md`: rules for agents working in this repo.
-- `agents/`, `orchestrating.md`, `settings.local.json`, `gate-settings.json`: the kit that `make-lab` copies into `~/lab/<repo>`.
-- `docs/`: the playbooks (English and Vietnamese), diagrams and run screenshots. See `docs/README.md`.
+![A gate run on busy-bees: the gate on the left, two Sonnet workers on the right](docs/assets/gate-run-busy-bees.png)
 
-To try it, follow `docs/orchestration/lab-quickstart.md`.
+*A real run on `~/lab/busy-bees`. Left: the gate (Opus) plans, dispatches and reviews. Right: two Sonnet implementers, each in its own worktree, working on independent tasks.*
+
+## How it works
+
+One WezTerm window, one tab per repo. Each repo tab has one **gate** on the left and up to 3 **agent** panes on the right.
+
+| Role | Model | Job |
+|---|---|---|
+| Gate | Opus | Turns a spec into an approved plan, splits it into tasks, dispatches workers, runs reviews, reports one table. Never writes code. |
+| Implementer | Sonnet | Does one task in its own worktree: TDD, `./tool/ci_local.sh` green, commit on its branch, report back. Never pushes. |
+| Reviewer | Opus | Read-only. Checks one branch against the task and answers APPROVE or BLOCK. |
+
+Flow: spec, plan (you approve), tasks, parallel implementers, reviewer per branch (BLOCK goes back to the same worker, 2 rounds max), merge into a local feature branch, CI, one report. Only you merge to main.
+
+No custom framework: it uses Claude Code's own background sessions (`claude --bg`), subagents, worktrees and `claude agents`.
+
+## What is in the repo
+
+| Path | What |
+|---|---|
+| `agents/implementer.md`, `agents/reviewer.md` | Agent definitions |
+| `orchestrating.md` | Gate rules, copied to `CLAUDE.local.md` in a lab clone |
+| `settings.local.json` | Permission allow and deny list (push and publish are denied) |
+| `docs/` | Playbooks (English and Vietnamese), diagrams, run screenshot. Index in [`docs/README.md`](docs/README.md) |
+| `CONTEXT.md` | Goals, hypotheses, decisions so far, open items. Start here |
+| `CLAUDE.md` | Rules for agents working in this repo |
+
+The kit files are generated from the docs, so change both together. Every doc has a Vietnamese copy (`*.vi.md`, `*.vi.html`).
+
+## Docs
+
+- [`one-terminal-orchestrator.md`](docs/orchestration/one-terminal-orchestrator.md) ([vi](docs/orchestration/one-terminal-orchestrator.vi.md)): the main design. Layout, roles, hooks, human gates, Max plan limits.
+- [`lab-setup.md`](docs/orchestration/lab-setup.md): try it in a throwaway copy without touching `~/.claude`.
+- [`lab-quickstart.md`](docs/orchestration/lab-quickstart.md): the copy-paste version of the lab setup.
+- [`cut-verification-time.md`](docs/verification/cut-verification-time.md) ([vi](docs/verification/cut-verification-time.vi.md)): cutting the time spent checking agent output.
+- [`gate-and-agent-wall.html`](docs/diagrams/gate-and-agent-wall.html) ([vi](docs/diagrams/gate-and-agent-wall.vi.html)): one-page diagram of the window layout and the idea-to-merge flow. Open in a browser.
+
+## Quickstart
+
+Needs macOS, [WezTerm](https://wezterm.org), `jq`, a recent Claude Code (`claude update`), and `fvm` for Flutter repos.
+
+1. Follow steps 1 to 3 of [`lab-quickstart.md`](docs/orchestration/lab-quickstart.md) once per machine. They install four scripts into `~/bin`:
+   - `make-lab <repo>`: clones the repo into `~/lab/<name>`, disables its push URL, copies in the kit.
+   - `repo-tab <dir>`: opens a WezTerm tab running the gate for that repo.
+   - `agent-wall.sh`: called by the gate to start a worker and open its pane.
+   - `agent-init`: adds the per-repo files (`tool/ci_local.sh`, `.worktreeinclude`, a `.gitignore` line).
+2. Make the lab copy and open the gate:
+   ```bash
+   make-lab ~/Projects/<your-repo>
+   repo-tab ~/lab/<your-repo>
+   ```
+3. In the gate tab, give it a small task with 2 independent parts, approve the plan, say `go`.
+4. Throw the lab away with `rm -rf ~/lab/<name>`, or fetch a branch from it into the real repo.
+
+## Safety
+
+- The lab clone's push URL is `DISABLED`, and `git push`, `pub publish`, `fastlane` and `firebase deploy` are denied.
+- Nothing here touches `~/.claude` or your real repo.
+- Do not run the gate or workers in bypass-permissions mode: agent reports to the gate then get held for approval. Use auto mode.
+- Max 3 agents per tab. All agents share one usage quota.
+
+## Status
+
+Experimental. Each run is logged (time, interventions, BLOCKs, cost) under `docs/runs/` as research data. See `CONTEXT.md` for the hypotheses being tested and the open items.
