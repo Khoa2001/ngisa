@@ -1,12 +1,12 @@
-# Một cửa sổ, mỗi repo một gate, nhiều agent
+# Một cửa sổ, mỗi repo một NGISA, nhiều agent
 
-> Xem hình trước: trang sơ đồ [Gate và Agent Wall](https://claude.ai/artifact/ENAt99SX1UwoaG5Lm3nzBa). File này là bản chi tiết.
+> Xem hình trước: trang sơ đồ [NGISA và Agent Wall](https://claude.ai/artifact/ENAt99SX1UwoaG5Lm3nzBa). File này là bản chi tiết.
 > Code, lệnh, config giữ nguyên tiếng Anh để copy chạy được.
 
 **Tóm lại:**
 - Không tự build framework, không cài thêm tool quản lý tmux. Claude Code đã có đủ.
-- Mỗi repo có **một gate** (session Opus): lên kế hoạch, chia task, giao cho các **implementer** (Sonnet, chạy nền, mỗi con một **worktree** riêng), rồi cho **reviewer** (Opus) kiểm từng kết quả.
-- WezTerm: **một cửa sổ, mỗi tab là một repo**. Gate bên trái, tối đa 3 agent xếp chồng bên phải. Tab đầu là `overview` để xem hết mọi agent.
+- Mỗi repo có **một NGISA** (session Opus): lên kế hoạch, chia task, giao cho các **implementer** (Sonnet, chạy nền, mỗi con một **worktree** riêng), rồi cho **reviewer** (Opus) kiểm từng kết quả.
+- WezTerm: **một cửa sổ, mỗi tab là một repo**. NGISA bên trái, tối đa 3 agent xếp chồng bên phải. Tab đầu là `overview` để xem hết mọi agent.
 - Agent teams: **chưa dùng cho code** (thử nghiệm, không có worktree, tốn ~7× token, không chạy được split của WezTerm).
 - Chưa có hook + CI gate thì đừng chạy song song: chỉ nhân số thứ bạn phải tự kiểm. Làm [cut-verification-time.md](../verification/cut-verification-time.md) trước.
 
@@ -18,13 +18,13 @@
 
 | Lựa chọn | Ai điều phối | Cách ly file | Kết luận |
 |---|---|---|---|
-| **Background session** (`claude --bg`) + **subagent** (`~/.claude/agents/*.md`) | Gate của repo | Mỗi agent một worktree | **Dùng.** Đây chính là cái "gate" bạn muốn. |
+| **Background session** (`claude --bg`) + **subagent** (`~/.claude/agents/*.md`) | NGISA của repo | Mỗi agent một worktree | **Dùng.** Đây chính là cái "NGISA" bạn muốn. |
 | **Agent view** (`claude agents`) | Bạn | Worktree tự động | **Dùng làm tab `overview`**: thấy mọi agent, vàng = đang chờ bạn. |
 | **Agent teams** | Một lead session | **Không có**, dùng chung checkout | Chỉ cho research, review, debug. **Không** cho code. |
 | **Dynamic workflows** (`ultracode: …`) | Script Claude viết | Theo từng item | Cho việc cơ học diện rộng ("migrate mọi widget"). Không cho feature. |
 | **`/batch`** | Claude | 5–30 worktree | Như workflows, cho 1 thay đổi lớn mang tính cơ học. |
 | claude-squad, ccmanager, Conductor, script tmux | Bạn | Worktree | **Bỏ qua.** Trùng với agent view, thêm tool thêm lỗi. |
-| Agent SDK tự viết gate | Code của bạn | Tự làm | **Bỏ qua.** Build framework là non-goal của project. |
+| Agent SDK tự viết NGISA | Code của bạn | Tự làm | **Bỏ qua.** Build framework là non-goal của project. |
 
 ## 2. Cài đặt
 
@@ -35,7 +35,7 @@ Gần như mọi thứ nằm ở thư mục home, dùng chung mọi repo. Mỗi 
 | Thành phần | Đặt ở đâu | Phạm vi |
 |---|---|---|
 | `implementer.md`, `reviewer.md` | `~/.claude/agents/` | 1 lần, mọi repo |
-| Luật cho gate | `~/.claude/CLAUDE.md` (hoặc skill `~/.claude/skills/orchestrate/`) | 1 lần |
+| Luật cho NGISA | `~/.claude/CLAUDE.md` (hoặc skill `~/.claude/skills/orchestrate/`) | 1 lần |
 | Hook format, Stop gate, chặn lệnh không đảo ngược được, allowlist quyền | `~/.claude/settings.json` | 1 lần |
 | `agent-wall.sh`, `repo-tab`, `agent-init` | `~/bin/` (có trong PATH) | 1 lần |
 | WezTerm | không cần config, script dùng `wezterm cli` | 1 lần |
@@ -43,7 +43,7 @@ Gần như mọi thứ nằm ở thư mục home, dùng chung mọi repo. Mỗi 
 | `.worktreeinclude` | gốc repo | **từng repo** (file bị gitignore mà worktree cần, vd `.env`) |
 | dòng `.claude/worktrees/` trong `.gitignore` | trong repo | **từng repo** |
 
-Hook ở user-level không được giả định cấu trúc repo: Stop gate = "có `./tool/ci_local.sh` thì chạy, không có thì thôi"; hook format chỉ format `*.dart` (bỏ file generate). Repo chưa có `ci_local.sh` thì chỉ là chưa được gate, không hỏng gì.
+Hook ở user-level không được giả định cấu trúc repo: Stop gate = "có `./tool/ci_local.sh` thì chạy, không có thì thôi"; hook format chỉ format `*.dart` (bỏ file generate). Repo chưa có `ci_local.sh` thì chỉ là chưa được NGISA, không hỏng gì.
 
 **Mỗi repo: một lệnh.** `~/bin/agent-init`:
 
@@ -111,13 +111,13 @@ Do not edit files.
 
 - Mỗi worktree là một bản checkout mới: phải `pub get` + `build_runner` lại. Tốn ổ đĩa và vài phút. Đó là giá của việc cách ly, chấp nhận.
 - **Chỉ có một emulator/simulator dùng chung.** Mỗi lúc chỉ một agent được chạy `integration_test`. Unit/widget test chạy song song thoải mái.
-- Nếu implementer phải tách nhánh từ feature branch mà gate đang đứng (thường là vậy): `"worktree": { "baseRef": "head" }`. Mặc định `"fresh"` tách từ `main`.
+- Nếu implementer phải tách nhánh từ feature branch mà NGISA đang đứng (thường là vậy): `"worktree": { "baseRef": "head" }`. Mặc định `"fresh"` tách từ `main`.
 
-### 2c. Luật cho gate (`~/.claude/CLAUDE.md`)
+### 2c. Luật cho NGISA (`~/.claude/CLAUDE.md`)
 
 ```md
 ## Orchestrating
-You are the orchestrator (gate) for this repo. You do not write feature code yourself.
+You are the orchestrator (NGISA) for this repo. You do not write feature code yourself.
 1. Spec → plan with superpowers (brainstorming, writing-plans). STOP and wait for my approval of the plan.
 2. Split the approved plan into tasks. Each task lists the exact paths it may touch.
    Two tasks that touch the same file are NOT parallel; chain them.
@@ -128,6 +128,11 @@ You are the orchestrator (gate) for this repo. You do not write feature code you
 5. Only one agent runs integration tests / the emulator at a time.
 6. Merge APPROVED task branches into the feature branch locally, run ./tool/ci_local.sh, push the feature branch, open a DRAFT PR.
 7. Report to me: one table (task | branch | reviewer verdict | tests | unverified items), plus the PR link.
+Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
+  Spawn ONE implementer with exactly those paths, then run the reviewer as usual. Anything bigger: say it needs a plan.
+Relay: when I ask for something extra from a worker (e.g. "have it carve", "fix the lint"), SendMessage it to
+  that worker (same session, same branch). For carve: tell it to run /carve; I answer its prompts in its pane.
+Style: talk in caveman ultra (a hook reminds you). Code, commits, PR text, security warnings: normal.
 Never: merge to main, force-push, publish, touch store/remote-config/signing, delete branches with unmerged work.
 ```
 
@@ -139,13 +144,14 @@ Trong `~/.claude/settings.json`, thêm vào hook format + Stop gate của playbo
 - **`Notification`** (`agent_needs_input`, `agent_completed`) → thông báo desktop/điện thoại, khỏi ngồi canh màn hình.
 - Cho phép sẵn các lệnh nhàm chán (`fvm flutter test`, `melos *`, `dart format`, `git add/commit/diff/log`, `agent-wall.sh`) trong `permissions.allow`. Không thì agent nền nào cũng đứng ở "Needs input" và song song chỉ là giả.
 - **Không** cho phép rộng `Bash(wezterm cli:*)`. Chỉ đi qua `agent-wall.sh` để layout không bị loạn.
-- **Không** chạy gate hay agent ở `bypassPermissions`: ở chế độ đó, báo cáo từ session khác bị giữ lại chờ duyệt, không tự đến gate.
+- NGISA và báo cáo của worker nói kiểu caveman ultra nhờ hook `SessionStart` + `UserPromptSubmit` chạy `caveman-ultra-hook` (chỉ thêm context, không chặn gì). Code, commit, PR vẫn viết bình thường. Bản luật cho lab, đi PR qua `agent-pr`, nằm trong `lab-quickstart.md`.
+- **Không** chạy NGISA hay agent ở `bypassPermissions`: ở chế độ đó, báo cáo từ session khác bị giữ lại chờ duyệt, không tự đến NGISA.
 
 ## 3. WezTerm: một cửa sổ, mỗi tab một repo
 
 ```
 ┌ overview ┬ scanner ┬ owen-host-app ┬ work-app ┐
-│ gate-scanner (Opus)    │ scanner-cache   [Done]     │
+│ ngisa-scanner (Opus)   │ scanner-cache   [Done]     │
 │ bạn gõ ý tưởng ở đây    ├────────────────────────────┤
 │                        │ scanner-sync    [Working]  │
 │                        ├────────────────────────────┤
@@ -154,21 +160,21 @@ Trong `~/.claude/settings.json`, thêm vào hook format + Stop gate của playbo
 ```
 
 - Tab `overview` chạy `claude agents`: mọi agent của mọi repo. `Ctrl+S` gom theo repo. `Space` xem nhanh, `Enter` vào hẳn, `←` thoát ra. Dòng vàng = đang chờ bạn.
-- Mỗi tab repo: gate bên trái, tối đa 3 pane agent bên phải.
+- Mỗi tab repo: NGISA bên trái, tối đa 3 pane agent bên phải.
 - Pane chỉ để **xem** (`claude attach`). Đóng pane **không** dừng agent.
 
-### Vì sao mỗi repo một gate, không phải một gate chung
+### Vì sao mỗi repo một NGISA, không phải một NGISA chung
 
-Một gate chung cho mọi repo làm được, nhưng đừng:
-- **Lên plan mù.** Session chỉ load `CLAUDE.md`, settings, skill của thư mục nó khởi động. Gate đặt ở `~/code` sẽ không đọc `CLAUDE.md` của scanner khi viết plan, mà plan là bước quan trọng nhất.
+Một NGISA chung cho mọi repo làm được, nhưng đừng:
+- **Lên plan mù.** Session chỉ load `CLAUDE.md`, settings, skill của thư mục nó khởi động. NGISA đặt ở `~/code` sẽ không đọc `CLAUDE.md` của scanner khi viết plan, mà plan là bước quan trọng nhất.
 - **Một context cho tất cả.** Spec, plan, kết quả review của 3 repo dồn vào một cuộc hội thoại, compact sớm, và compact thì mất chi tiết plan trước.
-- **Một chỗ kẹt là kẹt hết.** Gate chờ một permission prompt hoặc chờ reset usage limit thì mọi repo đều đứng.
+- **Một chỗ kẹt là kẹt hết.** NGISA chờ một permission prompt hoặc chờ reset usage limit thì mọi repo đều đứng.
 
 "Global" vẫn đúng ở chỗ cần: agent, luật, hook, script đều ở user-level, và tab `overview` thấy hết.
 
 ### Script (cả hai ở `~/bin`)
 
-`repo-tab`: mở một repo thành tab mới, kèm gate của nó.
+`repo-tab`: mở một repo thành tab mới, kèm NGISA của nó.
 
 ```bash
 #!/usr/bin/env bash
@@ -176,20 +182,20 @@ Một gate chung cho mọi repo làm được, nhưng đừng:
 set -euo pipefail
 dir=$(cd "$1" && pwd); name=$(basename "$dir")
 [[ -x "$dir/tool/ci_local.sh" ]] || echo "warning: $name has no tool/ci_local.sh, run agent-init there first" >&2
-pane=$(wezterm cli spawn --cwd "$dir" -- claude --name "gate-$name" --model opus)
+pane=$(wezterm cli spawn --cwd "$dir" -- claude --name "ngisa-$name" --model opus)
 wezterm cli set-tab-title --pane-id "$pane" "$name"
 ```
 
-`agent-wall.sh`: thứ duy nhất gate gọi để tạo agent. Nó chia đúng tab của gate, nên agent luôn nằm cạnh gate sở hữu nó.
+`agent-wall.sh`: thứ duy nhất NGISA gọi để tạo agent. Nó chia đúng tab củan NGISA, nên agent luôn nằm cạnh NGISA sở hữu nó.
 
 ```bash
 #!/usr/bin/env bash
-# usage: agent-wall.sh <task> <agent-type> <model> "<prompt>"   (called by a gate, from its repo)
+# usage: agent-wall.sh <task> <agent-type> <model> "<prompt>"   (called by an NGISA, from its repo)
 set -euo pipefail
 task=$1 agent=$2 model=$3 prompt=$4
 repo=$(basename "$(git rev-parse --show-toplevel)")
 name="$repo-$task"
-me=${WEZTERM_PANE:?run from inside WezTerm}           # the gate's pane, inherited by its shell
+me=${WEZTERM_PANE:?run from inside WezTerm}           # the NGISA's pane, inherited by its shell
 json=$(wezterm cli list --format json)
 tab=$(jq --argjson p "$me" '.[] | select(.pane_id==$p) | .tab_id' <<<"$json")
 mapfile -t others < <(jq --argjson t "$tab" --argjson p "$me" \
@@ -197,7 +203,7 @@ mapfile -t others < <(jq --argjson t "$tab" --argjson p "$me" \
 (( ${#others[@]} < 3 )) || { echo "tab full: 3 agents already shown for $repo; wait for one to finish" >&2; exit 1; }
 
 claude --bg --name "$name" --agent "$agent" --model "$model" \
-  "$prompt  When finished, send your final report to @gate-$repo with SendMessage."
+  "$prompt  When finished, send your final report to @ngisa-$repo with SendMessage."
 
 if (( ${#others[@]} == 0 )); then
   wezterm cli split-pane --pane-id "$me" --right --percent 55 -- claude attach "$name"
@@ -207,7 +213,7 @@ fi
 ```
 
 Lưu ý:
-- Tên agent là `<repo>-<task>`: hai repo cùng có task `cache` cũng không đụng nhau, và agent báo cáo về đúng gate của repo mình (`@gate-scanner`).
+- Tên agent là `<repo>-<task>`: hai repo cùng có task `cache` cũng không đụng nhau, và agent báo cáo về đúng NGISA của repo mình (`@ngisa-scanner`).
 - Agent khởi động từ repo, nên worktree nằm trong `.claude/worktrees/` của repo đó. Các repo không bao giờ dùng chung worktree.
 - Kiểm tra "tab full" đếm **pane**, không đếm agent đang chạy. Lỡ đóng pane sớm thì agent vẫn chạy, vẫn tốn quota; xem tab `overview`.
 - Chưa test trên máy bạn: kiểm tra `wezterm cli list --format json` có in `tab_id` (bản mới đều có).
@@ -215,7 +221,7 @@ Lưu ý:
 ## 4. Một ngày làm việc
 
 ```bash
-repo-tab ~/code/my_app        # tab mới: gate của repo. Chỉ nói chuyện với nó.
+repo-tab ~/code/my_app        # tab mới: NGISA của repo. Chỉ nói chuyện với nó.
 > /superpowers:brainstorming  … → spec. Bạn đọc spec.               # CỔNG 1: ý định
 > writing-plans …             → plan + file mỗi task. Bạn duyệt.    # CỔNG 2: plan
 > "execute the plan per Orchestrating rules"
@@ -241,7 +247,7 @@ Còn lại (format, analyze, test, chia việc, review từng task) là việc c
 ## 6. Gói Max: sẽ chạm limit
 
 - Mọi agent nền, subagent, workflow agent của **mọi repo** dùng **chung** quota 5 tiếng và quota tuần. 10 agent song song = tốn quota nhanh ~10 lần. Agent teams ~7 lần một session.
-- Opus chỉ cho gate + reviewer. Sonnet cho implementer. Haiku cho việc cơ học. Ghim `model: sonnet` trong file agent, đừng để implementer kế thừa Opus của gate.
+- Opus chỉ cho NGISA + reviewer. Sonnet cho implementer. Haiku cho việc cơ học. Ghim `model: sonnet` trong file agent, đừng để implementer kế thừa Opus củan NGISA.
 - **Tối đa 3 agent mỗi tab repo, khoảng 4–5 agent chạy cùng lúc tổng cộng.** Chạy nặng ở một repo một lúc; repo khác để lên plan hoặc review.
 - Bật `autoContinueAtUsageLimit` để chờ reset thay vì hỏng giữa chừng.
 - Xem `/usage` (phần attribution) hàng tuần để biết agent nào ăn quota.
@@ -263,7 +269,7 @@ Nếu "merge-conflict" và "plan-wrong" chiếm phần lớn ở bản song song
 
 1. Hook verification + `ci_local.sh` (playbook trước) nếu chưa có.
 2. `implementer.md` + `reviewer.md` + `agent-init` trong repo đầu tiên.
-3. Luật gate + hook chặn `PreToolUse` + allowlist quyền.
+3. Luật NGISA + hook chặn `PreToolUse` + allowlist quyền.
 4. `repo-tab` + `agent-wall.sh`. Chạy một feature với tối đa 2 implementer. Sửa chỗ hỏng.
 5. Lên 3 implementer, rồi mở tab repo thứ hai.
 6. Agent teams: chỉ thử cho một buổi review hoặc debug. Không dùng cho code.
