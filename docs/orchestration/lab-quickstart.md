@@ -15,7 +15,7 @@ source ~/.zshrc
 ## Step 2. Fill the kit
 
 ```bash
-KIT=/Users/khoamai/Projects/my_proj/agent-orchestration-kit
+KIT=/Users/khoamai/Projects/my_proj/ngisa
 mkdir -p $KIT/agents
 
 cat > $KIT/agents/implementer.md <<'EOF'
@@ -50,7 +50,7 @@ EOF
 
 cat > $KIT/orchestrating.md <<'EOF'
 ## Orchestrating
-You are the orchestrator (gate) for this repo. You do not write feature code yourself.
+You are the orchestrator (NGISA) for this repo. You do not write feature code yourself.
 1. Spec → plan with superpowers (brainstorming, writing-plans). STOP and wait for my approval of the plan.
 2. Split the approved plan into tasks. Each task lists the exact paths it may touch.
    Two tasks that touch the same file are NOT parallel; chain them.
@@ -61,9 +61,18 @@ You are the orchestrator (gate) for this repo. You do not write feature code you
 4. When a worker's report arrives, run the `reviewer` subagent (in-process) on its branch.
    BLOCK -> message that worker with the findings (same session, same branch). Max 2 rounds, then ask me.
 5. Only one agent runs integration tests / the emulator at a time.
-6. Merge APPROVED task branches into a local feature branch and run ./tool/ci_local.sh. This is a lab: do not push.
+6. Merge APPROVED task branches into a local feature branch and run ./tool/ci_local.sh. This is a lab: never push on your own.
 7. Report to me: one table (task | branch | reviewer verdict | tests | unverified items).
-Never: merge to main, push, publish, touch store/remote-config/signing, delete branches with unmerged work.
+Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
+  Spawn ONE implementer with exactly those paths, then run the reviewer as usual. Anything bigger: say it needs a plan.
+Relay: when I ask for something extra from a worker (e.g. "have it carve", "fix the lint"), SendMessage it to
+  that worker (same session, same branch). For carve: tell it to run /carve; I answer its prompts in its pane.
+Pull request: only when I ask, from the local feature branch, after ci_local.sh is green. Run
+  `agent-pr "<title>" "<body>"` (draft PR; it pushes to the `upstream` remote). I approve each call.
+  Never use `git push` or `gh`/`tea` directly. Branch name must not start with `worktree-`.
+Style: talk in caveman ultra (a hook reminds you). Code, commits, PR text, security warnings: normal.
+Never: merge to main, push or open a PR without my ask, publish, touch store/remote-config/signing,
+  delete branches with unmerged work.
 EOF
 
 cat > $KIT/settings.local.json <<'EOF'
@@ -79,12 +88,16 @@ cat > $KIT/settings.local.json <<'EOF'
       "Bash(git push:*)", "Bash(flutter pub publish:*)", "Bash(dart pub publish:*)",
       "Bash(fastlane:*)", "Bash(firebase deploy:*)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "caveman-ultra-hook" }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "caveman-ultra-hook" }] }]
   }
 }
 EOF
 
-# gate-only settings: the gate can write plans/docs but not code (workers don't load this file)
-cat > $KIT/gate-settings.json <<'EOF'
+# NGISA-only settings: the NGISA can write plans/docs but not code (workers don't load this file)
+cat > $KIT/ngisa-settings.json <<'EOF'
 {
   "permissions": {
     "deny": [
@@ -96,10 +109,10 @@ cat > $KIT/gate-settings.json <<'EOF'
 }
 EOF
 
-ls -R $KIT     # expect: agents/implementer.md agents/reviewer.md orchestrating.md settings.local.json gate-settings.json
+ls -R $KIT     # expect: agents/implementer.md agents/reviewer.md orchestrating.md settings.local.json ngisa-settings.json
 ```
 
-## Step 3. Install the four scripts
+## Step 3. Install the scripts
 
 ```bash
 cat > ~/bin/agent-init <<'EOF'
@@ -124,13 +137,15 @@ EOF
 cat > ~/bin/make-lab <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/agent-orchestration-kit}
+kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/ngisa}
 [[ -d "$kit/agents" ]] || { echo "no kit at $kit" >&2; exit 1; }
 src=$(cd "$1" && pwd); name=$(basename "$src"); lab="$HOME/lab/$name"
 [[ -e "$lab" ]] && { echo "$lab exists; delete it first" >&2; exit 1; }
 git clone --quiet "$src" "$lab"
 cd "$lab"
 git remote set-url --push origin DISABLED
+# real remote for agent-pr only (direct `git push` stays denied in settings.local.json)
+if up=$(git -C "$src" remote get-url origin 2>/dev/null); then git remote add upstream "$up"; fi
 for f in .env .env.local android/key.properties android/app/google-services.json ios/Runner/GoogleService-Info.plist; do
   [[ -f "$src/$f" ]] && mkdir -p "$(dirname "$f")" && cp "$src/$f" "$f"
 done
@@ -148,8 +163,8 @@ cat > ~/bin/repo-tab <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 dir=$(cd "$1" && pwd); name=$(basename "$dir")
-kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/agent-orchestration-kit}
-pane=$(wezterm cli spawn --cwd "$dir" -- claude --name "gate-$name" --model opus --settings "$kit/gate-settings.json")
+kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/ngisa}
+pane=$(wezterm cli spawn --cwd "$dir" -- claude --name "ngisa-$name" --model opus --settings "$kit/ngisa-settings.json")
 wezterm cli set-tab-title --pane-id "$pane" "$name"
 EOF
 
@@ -165,7 +180,7 @@ tab=$(jq --argjson p "$me" '.[] | select(.pane_id==$p) | .tab_id' <<<"$json")
 others=($(jq --argjson t "$tab" --argjson p "$me" '.[] | select(.tab_id==$t and .pane_id!=$p) | .pane_id' <<<"$json"))
 (( ${#others[@]} < 3 )) || { echo "tab full: 3 agents already shown for $repo" >&2; exit 1; }
 claude --bg --name "$name" --agent "$agent" --model "$model" \
-  "$prompt  When finished, send your final report to @gate-$repo with SendMessage."
+  "$prompt  When finished, send your final report to @ngisa-$repo with SendMessage."
 if (( ${#others[@]} == 0 )); then
   wezterm cli split-pane --pane-id "$me" --right --percent 55 -- claude attach "$name"
 else
@@ -173,8 +188,47 @@ else
 fi
 EOF
 
-chmod +x ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh
-which make-lab repo-tab agent-wall.sh      # all three must print a path
+cat > ~/bin/caveman-ultra-hook <<'EOF'
+#!/usr/bin/env bash
+# SessionStart / UserPromptSubmit hook: keeps the NGISA and its workers in caveman ultra.
+set -euo pipefail
+ev=$(jq -r '.hook_event_name // "SessionStart"' 2>/dev/null || true)
+[[ -n $ev ]] || ev=SessionStart
+if [[ $ev == UserPromptSubmit ]]; then
+  msg='CAVEMAN ULTRA active. Drop articles, filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality. Code, commits, PR text, security warnings, irreversible-action confirmations: write normal.'
+else
+  msg='CAVEMAN ULTRA active every response until the user says "stop caveman" or "normal mode". Drop articles, filler, pleasantries, hedging. Fragments OK. Short synonyms. Abbreviate prose words (DB, auth, config, req, res, fn). Arrows for causality (X -> Y). Technical terms, code symbols, paths, branch names, commands, quoted errors: exact, never abbreviated. Code, commits, PR titles/bodies, security warnings, irreversible-action confirmations: write normal. Worker final reports stay in caveman ultra but keep branch name, files changed, test command + result, and unverified items exact.'
+fi
+jq -n --arg ev "$ev" --arg m "$msg" '{hookSpecificOutput: {hookEventName: $ev, additionalContext: $m}}'
+EOF
+
+cat > ~/bin/agent-pr <<'EOF'
+#!/usr/bin/env bash
+# usage: agent-pr "<title>" "<body>" [base]
+# Pushes the current branch to the `upstream` remote and opens a DRAFT PR (gh for github.com, tea otherwise).
+# The only push path in a lab; each call needs the user's approval because it is not in any allow list.
+set -euo pipefail
+title=${1:?usage: agent-pr "<title>" "<body>" [base]} body=${2:-}
+git remote get-url upstream >/dev/null 2>&1 || { echo "no 'upstream' remote; make-lab adds it" >&2; exit 1; }
+url=$(git remote get-url upstream)
+branch=$(git rev-parse --abbrev-ref HEAD)
+base=${3:-$(git ls-remote --symref upstream HEAD | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2}')}
+[[ -n $base ]] || { echo "cannot detect the base branch; pass it as arg 3" >&2; exit 1; }
+case $branch in
+  "$base"|main|master|develop|HEAD) echo "refusing to push '$branch': use a feature branch" >&2; exit 1;;
+  worktree-*) echo "rename the branch first: remote names must not start with 'worktree-'" >&2; exit 1;;
+esac
+[[ -z $(git status --porcelain) ]] || { echo "uncommitted changes; commit first" >&2; exit 1; }
+run() { if [[ -n ${AGENT_PR_DRY_RUN:-} ]]; then echo "+ $*"; else "$@"; fi; }
+run git push -u upstream "$branch"
+case $url in
+  *github.com*) run gh pr create --draft --base "$base" --head "$branch" --title "$title" --body "$body";;
+  *) run tea pulls create --base "$base" --head "$branch" --title "$title" --description "$body";;
+esac
+EOF
+
+chmod +x ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/caveman-ultra-hook ~/bin/agent-pr
+which make-lab repo-tab agent-wall.sh agent-pr caveman-ultra-hook      # all five must print a path
 ```
 
 (macOS ships bash 3.2, so `agent-wall.sh` here avoids `mapfile` and negative array indexes.)
@@ -184,21 +238,21 @@ which make-lab repo-tab agent-wall.sh      # all three must print a path
 ```bash
 claude update                                  # agent view and --bg need a recent version
 make-lab ~/Projects/vn_citizen_id_scan         # your repo path here
-repo-tab ~/lab/vn_citizen_id_scan              # opens a new tab with the gate
+repo-tab ~/lab/vn_citizen_id_scan              # opens a new tab with the NGISA
 ```
 
 The first time, Claude asks you to trust `~/lab/vn_citizen_id_scan`. Say yes.
 
 ## Step 5. First test (small on purpose)
 
-In the gate tab, type something tiny with 2 independent parts, e.g.:
+In the NGISA tab, type something tiny with 2 independent parts, e.g.:
 
 > Add a `toString()` to `OcrResult` and a unit test for `BoundsSerializer` edge cases. Brainstorm, then plan, then wait for me.
 
-Approve the spec, approve the plan, then say `go`. You should see:
-- 2 panes open on the right of the gate, one per agent
-- each agent finishes with tests green, then the gate says it got a report
-- the gate runs the reviewer and shows you one table
+Approve the spec, approve the plan, then say `go`. The NGISA answers in caveman ultra (the hook in `settings.local.json`). You should see:
+- 2 panes open on the right of the NGISA, one per agent
+- each agent finishes with tests green, then the NGISA says it got a report
+- the NGISA runs the reviewer and shows you one table
 
 Optional: open another tab and run `claude agents` to see every agent in one list.
 
@@ -209,13 +263,18 @@ rm -rf ~/lab/vn_citizen_id_scan                                  # throw it away
 git -C ~/Projects/vn_citizen_id_scan fetch ~/lab/vn_citizen_id_scan <branch>   # or keep a branch
 ```
 
+To open a draft PR from the lab instead, tell the NGISA "open a PR" once the feature branch is green. It runs
+`agent-pr`, and Claude asks you to approve that one command (`git push` itself stays denied).
+
 ## If something breaks
 
 | Symptom | Fix |
 |---|---|
 | `make-lab: command not found` | `source ~/.zshrc`, or open a new WezTerm tab |
-| `no kit at …` | step 2 didn't run; `ls /Users/khoamai/Projects/my_proj/agent-orchestration-kit` |
-| gate never gets the agent's report | gate or agents are in bypass-permissions mode; restart without it |
+| `no kit at …` | step 2 didn't run; `ls /Users/khoamai/Projects/my_proj/ngisa` |
+| NGISA never gets the agent's report | NGISA or agents are in bypass-permissions mode; restart without it |
 | `claude agents` prints a list and exits | `claude update` |
 | agent stuck on "Needs you" | it hit a command not in the allow list; approve it in its pane, then add it to `settings.local.json` in the kit |
+| `agent-pr: no 'upstream' remote` | the lab was made before this script existed: `git remote add upstream <real-url>` in the lab |
+| NGISA not in caveman | `which caveman-ultra-hook` must print a path; `ls ~/lab/<repo>/.claude/settings.local.json` must have a `hooks` block |
 | `tab full` | 3 agents already in this tab; wait or `wezterm cli kill-pane --pane-id N` a finished one |

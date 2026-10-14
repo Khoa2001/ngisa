@@ -1,18 +1,18 @@
-# agent-orchestration-kit
+# NGISA
 
-An orchestrator kit for running several Claude Code agents in parallel on one repo, plus the research behind it, from the "hand-off" project: can an agent system ship production-quality software from a spec, and where must a human stay in the loop?
+**NGISA** (*NGƯỜI GIÁM SÁT*, "the supervisor" in Vietnamese) is an orchestrator kit for running several Claude Code agents in parallel on one repo, plus the research behind it, from the "hand-off" project: can an agent system ship production-quality software from a spec, and where must a human stay in the loop?
 
-![A gate run on busy-bees: the gate on the left, two Sonnet workers on the right](docs/assets/gate-run-busy-bees.png)
+![A run on busy-bees: NGISA on the left, two Sonnet workers on the right](docs/assets/gate-run-busy-bees.png)
 
-*A real run on `~/lab/busy-bees`. Left: the gate (Opus) plans, dispatches and reviews. Right: two Sonnet implementers, each in its own worktree, working on independent tasks.*
+*A real run on `~/lab/busy-bees` (the screenshot predates the name NGISA, so the session still reads `gate-busy-bees`). Left: the NGISA (Opus) plans, dispatches and reviews. Right: two Sonnet implementers, each in its own worktree, working on independent tasks.*
 
 ## How it works
 
-One WezTerm window, one tab per repo. Each repo tab has one **gate** on the left and up to 3 **agent** panes on the right.
+One WezTerm window, one tab per repo. Each repo tab has one **NGISA** on the left and up to 3 **agent** panes on the right.
 
 | Role | Model | Job |
 |---|---|---|
-| Gate | Opus | Turns a spec into an approved plan, splits it into tasks, dispatches workers, runs reviews, reports one table. Never writes code. |
+| NGISA | Opus | Turns a spec into an approved plan, splits it into tasks, dispatches workers, runs reviews, reports one table. Never writes code. |
 | Implementer | Sonnet | Does one task in its own worktree: TDD, `./tool/ci_local.sh` green, commit on its branch, report back. Never pushes. |
 | Reviewer | Opus | Read-only. Checks one branch against the task and answers APPROVE or BLOCK. |
 
@@ -20,12 +20,23 @@ Flow: spec, plan (you approve), tasks, parallel implementers, reviewer per branc
 
 No custom framework: it uses Claude Code's own background sessions (`claude --bg`), subagents, worktrees and `claude agents`.
 
+## Talking to NGISA
+
+NGISA and the workers' reports answer in caveman ultra (terse, no filler) through a hook. Code, commits and PR text stay normal.
+
+| You say | What happens |
+|---|---|
+| a normal task | brainstorm, plan, you approve, then workers |
+| `quick: <one small edit in 1-2 files>` | skips the plan, one implementer on exactly those files, reviewer still runs |
+| `have it carve` | NGISA messages that worker to run `/carve`; you answer its prompts in its pane |
+| `open a PR` | after CI is green, NGISA runs `agent-pr` for a draft PR; Claude asks you to approve that command |
+
 ## What is in the repo
 
 | Path | What |
 |---|---|
 | `agents/implementer.md`, `agents/reviewer.md` | Agent definitions |
-| `orchestrating.md` | Gate rules, copied to `CLAUDE.local.md` in a lab clone |
+| `orchestrating.md` | NGISA rules, copied to `CLAUDE.local.md` in a lab clone |
 | `settings.local.json` | Permission allow and deny list (push and publish are denied) |
 | `docs/` | Playbooks (English and Vietnamese), diagrams, run screenshot. Index in [`docs/README.md`](docs/README.md) |
 | `CONTEXT.md` | Goals, hypotheses, decisions so far, open items. Start here |
@@ -39,30 +50,32 @@ The kit files are generated from the docs, so change both together. Every doc ha
 - [`lab-setup.md`](docs/orchestration/lab-setup.md): try it in a throwaway copy without touching `~/.claude`.
 - [`lab-quickstart.md`](docs/orchestration/lab-quickstart.md): the copy-paste version of the lab setup.
 - [`cut-verification-time.md`](docs/verification/cut-verification-time.md) ([vi](docs/verification/cut-verification-time.vi.md)): cutting the time spent checking agent output.
-- [`gate-and-agent-wall.html`](docs/diagrams/gate-and-agent-wall.html) ([vi](docs/diagrams/gate-and-agent-wall.vi.html)): one-page diagram of the window layout and the idea-to-merge flow. Open in a browser.
+- [`ngisa-and-agent-wall.html`](docs/diagrams/ngisa-and-agent-wall.html) ([vi](docs/diagrams/ngisa-and-agent-wall.vi.html)): one-page diagram of the window layout and the idea-to-merge flow. Open in a browser.
 
 ## Quickstart
 
 Needs macOS, [WezTerm](https://wezterm.org), `jq`, a recent Claude Code (`claude update`), and `fvm` for Flutter repos.
 
-1. Follow steps 1 to 3 of [`lab-quickstart.md`](docs/orchestration/lab-quickstart.md) once per machine. They install four scripts into `~/bin`:
-   - `make-lab <repo>`: clones the repo into `~/lab/<name>`, disables its push URL, copies in the kit.
-   - `repo-tab <dir>`: opens a WezTerm tab running the gate for that repo.
-   - `agent-wall.sh`: called by the gate to start a worker and open its pane.
+1. Follow steps 1 to 3 of [`lab-quickstart.md`](docs/orchestration/lab-quickstart.md) once per machine. They install six scripts into `~/bin`:
+   - `make-lab <repo>`: clones the repo into `~/lab/<name>`, disables its push URL (adding the real remote as `upstream`), copies in the kit.
+   - `repo-tab <dir>`: opens a WezTerm tab running the NGISA for that repo.
+   - `agent-wall.sh`: called by the NGISA to start a worker and open its pane.
    - `agent-init`: adds the per-repo files (`tool/ci_local.sh`, `.worktreeinclude`, a `.gitignore` line).
-2. Make the lab copy and open the gate:
+   - `agent-pr "<title>" "<body>"`: the only push path. Pushes the feature branch to `upstream` and opens a draft PR (`gh` for GitHub, `tea` otherwise). NGISA runs it only when you ask, and Claude asks you to approve each call.
+   - `caveman-ultra-hook`: the hook that keeps NGISA and the workers' reports in caveman ultra. Code, commits and PR text stay normal.
+2. Make the lab copy and open the NGISA:
    ```bash
    make-lab ~/Projects/<your-repo>
    repo-tab ~/lab/<your-repo>
    ```
-3. In the gate tab, give it a small task with 2 independent parts, approve the plan, say `go`.
+3. In the NGISA tab, give it a small task with 2 independent parts, approve the plan, say `go`.
 4. Throw the lab away with `rm -rf ~/lab/<name>`, or fetch a branch from it into the real repo.
 
 ## Safety
 
-- The lab clone's push URL is `DISABLED`, and `git push`, `pub publish`, `fastlane` and `firebase deploy` are denied.
+- The lab clone's push URL is `DISABLED`, and `git push`, `pub publish`, `fastlane` and `firebase deploy` are denied. The one way out is `agent-pr`, which refuses `main`, `master`, the base branch, `worktree-*` names and dirty trees.
 - Nothing here touches `~/.claude` or your real repo.
-- Do not run the gate or workers in bypass-permissions mode: agent reports to the gate then get held for approval. Use auto mode.
+- Do not run the NGISA or workers in bypass-permissions mode: agent reports to the NGISA then get held for approval. Use auto mode.
 - Max 3 agents per tab. All agents share one usage quota.
 
 ## Status

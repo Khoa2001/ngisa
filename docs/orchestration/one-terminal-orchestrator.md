@@ -1,7 +1,7 @@
 # One terminal, one orchestrator, many agents
 
 Bottom line: don't build this, and don't install a third-party tmux manager. Claude Code now ships
-everything you described. Your "gate" is **one Opus orchestrator session** that plans, then dispatches
+everything you described. Your "NGISA" is **one Opus orchestrator session** that plans, then dispatches
 **worktree-isolated Sonnet implementer subagents** in the background and an **Opus reviewer** on each result.
 When you have several *independent* features going, **agent view** (`claude agents`) is the one screen
 that shows all of them. Agent teams look like exactly what you asked for, but they don't isolate agents in
@@ -23,13 +23,13 @@ Feature names and flags move fast; run `claude update` before you start.
 
 | Option | Who orchestrates | Isolation | Verdict for you |
 |---|---|---|---|
-| **Subagents** (`.claude/agents/*.md`, `isolation: worktree`, `background: true`) | Your orchestrator session, turn by turn | Each subagent gets its own worktree | **Use this.** It *is* the gate you described. Results return to one conversation. |
+| **Subagents** (`.claude/agents/*.md`, `isolation: worktree`, `background: true`) | Your orchestrator session, turn by turn | Each subagent gets its own worktree | **Use this.** It *is* the NGISA you described. Results return to one conversation. |
 | **Agent view** (`claude agents`, `claude --bg "…"`) | You | Each dispatched session moves into its own worktree before editing | **Use this as your one screen** when you run 2–3 independent orchestrators (one per feature). Research preview. |
 | **Agent teams** (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) | A lead session, with a shared task list and messaging | **None.** Teammates share one checkout; you must partition files by hand | Use for **research, review, competing-hypothesis debugging** only. Not for parallel coding. Experimental, ~7× tokens in plan mode, no resume. |
 | **Dynamic workflows** (`ultracode: …`, `/workflows`) | A script Claude writes | Can isolate per item | Use for **wide mechanical jobs**: "migrate every widget to X", "audit every repository class". Not for feature work. |
 | **`/batch`** | Claude | 5–30 worktree subagents | Shortcut for one big mechanical change. Same bucket as workflows. |
 | claude-squad, ccmanager, Conductor, tmux scripts | You | Worktrees | **Skip.** They predate agent view and now duplicate it. Conductor is a Mac GUI, not one terminal. Extra tool, extra failure mode, no gain. |
-| Agent SDK custom gate | Your code | Whatever you build | **Skip.** Building a framework is a stated non-goal of this project, and the built-ins already do routing, isolation and collection. |
+| Agent SDK custom orchestrator | Your code | Whatever you build | **Skip.** Building a framework is a stated non-goal of this project, and the built-ins already do routing, isolation and collection. |
 
 ## 2. The setup
 
@@ -132,7 +132,7 @@ Do not edit files.
 
 ```md
 ## Orchestrating
-You are the orchestrator. You do not write feature code yourself.
+You are the orchestrator (NGISA) for this repo. You do not write feature code yourself.
 1. Spec → plan with superpowers (brainstorming, writing-plans). STOP and wait for my approval of the plan.
 2. Split the approved plan into tasks. Each task lists the exact paths it may touch.
    Two tasks that touch the same file are NOT parallel; chain them.
@@ -141,6 +141,11 @@ You are the orchestrator. You do not write feature code yourself.
 5. Only one agent runs integration tests / the emulator at a time.
 6. Merge APPROVED task branches into the feature branch locally, run ./tool/ci_local.sh, push the feature branch, open a DRAFT PR.
 7. Report to me: one table (task | branch | reviewer verdict | tests | unverified items), plus the PR link.
+Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
+  Spawn ONE implementer with exactly those paths, then run the reviewer as usual. Anything bigger: say it needs a plan.
+Relay: when I ask for something extra from a worker (e.g. "have it carve", "fix the lint"), SendMessage it to
+  that worker (same session, same branch). For carve: tell it to run /carve; I answer its prompts in its pane.
+Style: talk in caveman ultra (a hook reminds you). Code, commits, PR text, security warnings: normal.
 Never: merge to main, force-push, publish, touch store/remote-config/signing, delete branches with unmerged work.
 ```
 
@@ -159,7 +164,7 @@ In `~/.claude/settings.json`, on top of the format + `Stop` gate from the verifi
 ## 3. Daily flow
 
 ```bash
-repo-tab ~/code/my_app        # new tab: the repo's gate. Talk only to this.
+repo-tab ~/code/my_app        # new tab: the repo's NGISA. Talk only to this.
 > /superpowers:brainstorming  … → spec. You read the spec.          # HUMAN GATE 1: intent
 > writing-plans …             → plan + paths per task. You approve. # HUMAN GATE 2: plan
 > "execute the plan per Orchestrating rules"
@@ -180,12 +185,12 @@ work survives; still, don't `Ctrl+X` twice on a row with uncommitted work.
 ## 3b. WezTerm: one window, one tab per repo
 
 Layout: **one WezTerm window**. Tab 1 = `overview` (`claude agents`, every agent in every repo;
-`Ctrl+S` groups them by repo). Every other tab = **one repo**: its gate on the left, its agents
+`Ctrl+S` groups them by repo). Every other tab = **one repo**: its NGISA on the left, its agents
 stacked on the right, max 3.
 
 ```
 ┌ overview ┬ scanner ┬ owen-host-app ┬ work-app ┐
-│ gate-scanner (Opus)    │ scanner-cache   [Done]     │
+│ ngisa-scanner (Opus)   │ scanner-cache   [Done]     │
 │ you type ideas here    ├────────────────────────────┤
 │                        │ scanner-sync    [Working]  │
 │                        ├────────────────────────────┤
@@ -193,19 +198,19 @@ stacked on the right, max 3.
 └────────────────────────┴────────────────────────────┘
 ```
 
-### Why a gate per repo, not one global gate
+### Why an NGISA per repo, not one global NGISA
 
-One global gate across all repos can be made to work (start it in `~/code`, pass the repo to the
+One global NGISA across all repos can be made to work (start it in `~/code`, pass the repo to the
 spawn script), but don't:
 - **It plans blind.** A session loads `CLAUDE.md`, project settings and skills from the folder it starts
-  in. A gate in `~/code` doesn't load the scanner's `CLAUDE.md` or Definition of done while it writes
+  in. An NGISA in `~/code` doesn't load the scanner's `CLAUDE.md` or Definition of done while it writes
   the plan, and the plan is the step that matters most.
 - **One context for everything.** Specs, plans and reviewer verdicts for three repos pile into one
   conversation, it compacts sooner, and compaction drops plan details first.
-- **One failure stops all repos.** A stuck permission prompt or a usage-limit wait in the gate
+- **One failure stops all repos.** A stuck permission prompt or a usage-limit wait in the NGISA
   stalls every repo's work.
 
-A gate per repo tab fixes all three, and "global" is still true where it counts: the agents,
+An NGISA per repo tab fixes all three, and "global" is still true where it counts: the agents,
 rules, hooks and scripts are user-level (section 2), and the overview tab shows everything at once.
 
 ### Usage limits are global, not per repo
@@ -216,7 +221,7 @@ time; keep the others on planning or review.
 
 ### Scripts (both in `~/bin`, both user-level)
 
-`repo-tab`: open a repo as a new tab in the current window with its gate.
+`repo-tab`: open a repo as a new tab in the current window with its NGISA.
 
 ```bash
 #!/usr/bin/env bash
@@ -224,21 +229,21 @@ time; keep the others on planning or review.
 set -euo pipefail
 dir=$(cd "$1" && pwd); name=$(basename "$dir")
 [[ -x "$dir/tool/ci_local.sh" ]] || echo "warning: $name has no tool/ci_local.sh, run agent-init there first" >&2
-pane=$(wezterm cli spawn --cwd "$dir" -- claude --name "gate-$name" --model opus)
+pane=$(wezterm cli spawn --cwd "$dir" -- claude --name "ngisa-$name" --model opus)
 wezterm cli set-tab-title --pane-id "$pane" "$name"
 ```
 
-`agent-wall.sh`: the only thing a gate calls to spawn an agent. It splits *the gate's own tab*,
-so agents always land next to the gate that owns them.
+`agent-wall.sh`: the only thing an NGISA calls to spawn an agent. It splits *the NGISA's own tab*,
+so agents always land next to the NGISA that owns them.
 
 ```bash
 #!/usr/bin/env bash
-# usage: agent-wall.sh <task> <agent-type> <model> "<prompt>"   (called by a gate, from its repo)
+# usage: agent-wall.sh <task> <agent-type> <model> "<prompt>"   (called by an NGISA, from its repo)
 set -euo pipefail
 task=$1 agent=$2 model=$3 prompt=$4
 repo=$(basename "$(git rev-parse --show-toplevel)")
 name="$repo-$task"
-me=${WEZTERM_PANE:?run from inside WezTerm}           # the gate's pane, inherited by its shell
+me=${WEZTERM_PANE:?run from inside WezTerm}           # the NGISA's pane, inherited by its shell
 json=$(wezterm cli list --format json)
 tab=$(jq --argjson p "$me" '.[] | select(.pane_id==$p) | .tab_id' <<<"$json")
 mapfile -t others < <(jq --argjson t "$tab" --argjson p "$me" \
@@ -246,7 +251,7 @@ mapfile -t others < <(jq --argjson t "$tab" --argjson p "$me" \
 (( ${#others[@]} < 3 )) || { echo "tab full: 3 agents already shown for $repo; wait for one to finish" >&2; exit 1; }
 
 claude --bg --name "$name" --agent "$agent" --model "$model" \
-  "$prompt  When finished, send your final report to @gate-$repo with SendMessage."
+  "$prompt  When finished, send your final report to @ngisa-$repo with SendMessage."
 
 if (( ${#others[@]} == 0 )); then
   wezterm cli split-pane --pane-id "$me" --right --percent 55 -- claude attach "$name"
@@ -257,7 +262,7 @@ fi
 
 Notes:
 - Agent names are `<repo>-<task>`, so two repos can both have a `cache` task without colliding, and
-  each agent reports to its own repo's gate (`@gate-scanner`).
+  each agent reports to its own repo's NGISA (`@ngisa-scanner`).
 - Each agent is a background session started from the repo, so its worktree is in that repo's
   `.claude/worktrees/`. Repos never share worktrees.
 - Panes are viewers (`claude attach`). Closing one never stops the agent; `wezterm cli kill-pane` when done.
@@ -265,7 +270,7 @@ Notes:
   runs and still counts against your quota; check the overview tab.
 - Check `wezterm cli list --format json` on your version prints `tab_id`; it should.
 
-### Gate rules (replace steps 3 and 4 in the Orchestrating block)
+### NGISA rules (replace steps 3 and 4 in the Orchestrating block)
 
 ```md
 3. Spawn each parallel task with `agent-wall.sh <task-slug> implementer sonnet "<task text>"`.
@@ -276,7 +281,9 @@ Notes:
 
 Allow exactly `"Bash(agent-wall.sh:*)"` in `~/.claude/settings.json`. Don't allow `Bash(wezterm cli:*)`.
 
-Don't run gates or agents in `bypassPermissions`: in that mode incoming reports from other sessions
+Caveman ultra for the NGISA and the workers' reports comes from a `SessionStart` + `UserPromptSubmit` hook that runs `caveman-ultra-hook` (it adds context; nothing is blocked). Code, commits and PR text stay normal. The lab version of these rules, which routes PRs through `agent-pr`, is in `lab-quickstart.md`.
+
+Don't run NGISA sessions or agents in `bypassPermissions`: in that mode incoming reports from other sessions
 are held for approval instead of delivered.
 
 Agent teams' split-pane mode only drives tmux or iTerm2, not WezTerm, so it can't produce this layout.
@@ -308,7 +315,7 @@ Everything else (format, analyze, tests, routing, per-task review) is the machin
 
 - Tasks touching the same files (shared models, `pubspec.yaml`, routing tables, generated code). Chain them.
 - Small features (< ~3 tasks). One session with superpowers' `subagent-driven-development` is faster.
-- When your gates aren't in place yet. You'll drown in review.
+- When your NGISA sessions aren't in place yet. You'll drown in review.
 
 ## 7. Measure it (ties to the project hypothesis)
 

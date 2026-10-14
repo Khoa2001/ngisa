@@ -1,9 +1,9 @@
-# agent-orchestration-kit
+# ngisa
 
-The orchestrator kit (gate, implementer and reviewer agents, hooks, scripts) and the research docs behind it. Read `CONTEXT.md` first: it has the goals, the decisions so far, and the open items.
+The orchestrator kit (NGISA, implementer and reviewer agents, hooks, scripts) and the research docs behind it. Read `CONTEXT.md` first: it has the goals, the decisions so far, and the open items.
 
 ## Layout
-- `agents/`, `orchestrating.md`, `settings.local.json`, `gate-settings.json`: the kit. `make-lab` copies these into `~/lab/<repo>`.
+- `agents/`, `orchestrating.md`, `settings.local.json`, `ngisa-settings.json`: the kit. `make-lab` copies these into `~/lab/<repo>`.
 - `docs/`: the source docs, diagrams and run screenshots. `docs/README.md` indexes them.
 
 ## Rules

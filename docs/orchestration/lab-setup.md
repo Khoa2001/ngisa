@@ -7,7 +7,7 @@ working unchanged, and deleting the clone removes every trace.
 
 ```
 ~/.claude/                 untouched (your CLAUDE.md, superpowers, hooks)
-~/Projects/my_proj/agent-orchestration-kit/   the orchestrator files, versioned in your personal repo
+~/Projects/my_proj/ngisa/   the orchestrator files, versioned in your personal repo
 ~/lab/scanner/             throwaway clone: kit copied in as local, git-ignored files
    ├─ CLAUDE.local.md      orchestrator rules (loads on top of your global CLAUDE.md)
    ├─ .claude/agents/      implementer.md, reviewer.md
@@ -17,14 +17,14 @@ working unchanged, and deleting the clone removes every trace.
 
 ## 1. Make the kit once
 
-The kit lives in your personal repo at `/Users/khoamai/Projects/my_proj/agent-orchestration-kit`. Commit it there so changes are versioned.
+The kit lives in your personal repo at `/Users/khoamai/Projects/my_proj/ngisa`. Commit it there so changes are versioned.
 
 ```bash
-mkdir -p /Users/khoamai/Projects/my_proj/agent-orchestration-kit/agents
+mkdir -p /Users/khoamai/Projects/my_proj/ngisa/agents
 # paste from one-terminal-orchestrator.md:
-#   section 2a  -> agent-orchestration-kit/agents/implementer.md, agent-orchestration-kit/agents/reviewer.md
-#   section 2c  -> agent-orchestration-kit/orchestrating.md          (the "## Orchestrating" block)
-#   section 2d  -> agent-orchestration-kit/settings.local.json       (PreToolUse block hook + permissions.allow)
+#   section 2a  -> ngisa/agents/implementer.md, ngisa/agents/reviewer.md
+#   section 2c  -> ngisa/orchestrating.md          (the "## Orchestrating" block)
+#   section 2d  -> ngisa/settings.local.json       (PreToolUse block hook + permissions.allow)
 # scripts (new commands only, they change nothing in Claude Code by existing):
 #   agent-init, repo-tab, agent-wall.sh -> ~/bin, chmod +x
 ```
@@ -35,7 +35,7 @@ mkdir -p /Users/khoamai/Projects/my_proj/agent-orchestration-kit/agents
 #!/usr/bin/env bash
 # usage: make-lab ~/code/scanner   -> ~/lab/scanner with the orchestrator set up locally
 set -euo pipefail
-kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/agent-orchestration-kit}           # override with LAB_KIT=... if you move it
+kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/ngisa}           # override with LAB_KIT=... if you move it
 [[ -d "$kit/agents" ]] || { echo "no kit at $kit" >&2; exit 1; }
 src=$(cd "$1" && pwd); name=$(basename "$src"); lab="$HOME/lab/$name"
 [[ -e "$lab" ]] && { echo "$lab exists; delete it first" >&2; exit 1; }
@@ -62,7 +62,7 @@ and the agents live in the lab clone, they only exist in that tab. Your normal `
 `~/code/scanner` behaves as before.
 
 Shortcut for the rules only: Claude Code also loads `CLAUDE.md` from parent folders, so
-`cp ~/Projects/my_proj/agent-orchestration-kit/orchestrating.md ~/lab/CLAUDE.md` once gives every clone under `~/lab` the rules and you can
+`cp ~/Projects/my_proj/ngisa/orchestrating.md ~/lab/CLAUDE.md` once gives every clone under `~/lab` the rules and you can
 drop the `CLAUDE.local.md` line. Agents and settings still have to sit in each clone's `.claude/`.
 
 ## 3. What is and isn't isolated
