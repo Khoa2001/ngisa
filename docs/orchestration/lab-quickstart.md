@@ -1,0 +1,221 @@
+# Lab quickstart (copy-paste)
+
+Run every block in WezTerm, in order. Replace `~/Projects/vn_citizen_id_scan` in step 4 with the repo you
+want to test on. Nothing here touches `~/.claude` or your real repo.
+
+## Step 1. Tools
+
+```bash
+brew install jq            # the scripts read WezTerm's pane list with jq
+mkdir -p ~/bin ~/lab
+grep -q 'HOME/bin' ~/.zshrc || echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+## Step 2. Fill the kit
+
+```bash
+KIT=/Users/khoamai/Projects/my_proj/agent-orchestration-kit
+mkdir -p $KIT/agents
+
+cat > $KIT/agents/implementer.md <<'EOF'
+---
+name: implementer
+description: Implements one task from an approved plan in its own worktree, TDD, then commits on its branch
+model: sonnet
+isolation: worktree
+background: true
+---
+You get ONE task from an approved plan. Work only inside your worktree.
+1. Run setup first: `fvm flutter pub get` (or `melos bootstrap`), then `dart run build_runner build -d` if the package uses codegen.
+2. TDD: write the failing test, show it red, make it green.
+3. `./tool/ci_local.sh` must exit 0 before you stop.
+4. Commit on your branch. Never push, never merge, never touch main.
+5. Final message, exactly: branch name, files changed, test command + result, anything you could NOT verify and why.
+Do not edit files outside the task's listed paths. If you must, stop and say so.
+EOF
+
+cat > $KIT/agents/reviewer.md <<'EOF'
+---
+name: reviewer
+description: Reviews one implementer branch against the plan task and the spec. Read-only.
+model: opus
+tools: Read, Grep, Glob, Bash
+---
+Diff the given branch against its base. Check: does it do the task as written, are tests real
+(would they fail without the change), any edits outside the task's paths, PII/logging of card data,
+anything irreversible. Output: APPROVE or BLOCK, then a numbered list of findings with file:line.
+Do not edit files.
+EOF
+
+cat > $KIT/orchestrating.md <<'EOF'
+## Orchestrating
+You are the orchestrator (gate) for this repo. You do not write feature code yourself.
+1. Spec → plan with superpowers (brainstorming, writing-plans). STOP and wait for my approval of the plan.
+2. Split the approved plan into tasks. Each task lists the exact paths it may touch.
+   Two tasks that touch the same file are NOT parallel; chain them.
+3. Spawn each parallel task with `agent-wall.sh <task-slug> implementer sonnet "<task text>"`.
+   Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
+   More tasks than free slots: keep a queue in your reply, start the next one each time a worker's report arrives.
+   You may not edit lib/ or test/ yourself, even for a one-line fix. Every code change goes to a worker.
+4. When a worker's report arrives, run the `reviewer` subagent (in-process) on its branch.
+   BLOCK -> message that worker with the findings (same session, same branch). Max 2 rounds, then ask me.
+5. Only one agent runs integration tests / the emulator at a time.
+6. Merge APPROVED task branches into a local feature branch and run ./tool/ci_local.sh. This is a lab: do not push.
+7. Report to me: one table (task | branch | reviewer verdict | tests | unverified items).
+Never: merge to main, push, publish, touch store/remote-config/signing, delete branches with unmerged work.
+EOF
+
+cat > $KIT/settings.local.json <<'EOF'
+{
+  "permissions": {
+    "allow": [
+      "Bash(fvm flutter test:*)", "Bash(flutter test:*)", "Bash(fvm flutter pub get)", "Bash(flutter pub get)",
+      "Bash(melos:*)", "Bash(dart format:*)", "Bash(dart run build_runner:*)", "Bash(./tool/ci_local.sh)",
+      "Bash(git status)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)", "Bash(git commit:*)",
+      "Bash(git merge:*)", "Bash(git checkout:*)", "Bash(agent-wall.sh:*)"
+    ],
+    "deny": [
+      "Bash(git push:*)", "Bash(flutter pub publish:*)", "Bash(dart pub publish:*)",
+      "Bash(fastlane:*)", "Bash(firebase deploy:*)"
+    ]
+  }
+}
+EOF
+
+# gate-only settings: the gate can write plans/docs but not code (workers don't load this file)
+cat > $KIT/gate-settings.json <<'EOF'
+{
+  "permissions": {
+    "deny": [
+      "Edit(lib/**)", "Write(lib/**)", "Edit(test/**)", "Write(test/**)",
+      "Edit(integration_test/**)", "Write(integration_test/**)",
+      "Edit(android/**)", "Write(android/**)", "Edit(ios/**)", "Write(ios/**)"
+    ]
+  }
+}
+EOF
+
+ls -R $KIT     # expect: agents/implementer.md agents/reviewer.md orchestrating.md settings.local.json gate-settings.json
+```
+
+## Step 3. Install the four scripts
+
+```bash
+cat > ~/bin/agent-init <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p tool
+grep -qxF '.claude/worktrees/' .gitignore 2>/dev/null || echo '.claude/worktrees/' >> .gitignore
+[[ -f .worktreeinclude ]] || printf '.env\n.env.local\nandroid/key.properties\n' > .worktreeinclude
+[[ -f tool/ci_local.sh ]] || { cat > tool/ci_local.sh <<'S'
+#!/usr/bin/env bash
+set -euo pipefail
+if command -v fvm >/dev/null; then F="fvm flutter"; D="fvm dart"; else F=flutter; D=dart; fi
+if [[ -f melos.yaml ]]; then
+  melos exec -- $D format . --set-exit-if-changed && melos analyze && melos test
+else
+  $D format . --set-exit-if-changed && $F analyze && $F test
+fi
+S
+chmod +x tool/ci_local.sh; }
+EOF
+
+cat > ~/bin/make-lab <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/agent-orchestration-kit}
+[[ -d "$kit/agents" ]] || { echo "no kit at $kit" >&2; exit 1; }
+src=$(cd "$1" && pwd); name=$(basename "$src"); lab="$HOME/lab/$name"
+[[ -e "$lab" ]] && { echo "$lab exists; delete it first" >&2; exit 1; }
+git clone --quiet "$src" "$lab"
+cd "$lab"
+git remote set-url --push origin DISABLED
+for f in .env .env.local android/key.properties android/app/google-services.json ios/Runner/GoogleService-Info.plist; do
+  [[ -f "$src/$f" ]] && mkdir -p "$(dirname "$f")" && cp "$src/$f" "$f"
+done
+mkdir -p .claude/agents
+cp "$kit"/agents/*.md .claude/agents/
+cp "$kit/settings.local.json" .claude/settings.local.json
+cp "$kit/orchestrating.md" CLAUDE.local.md
+printf '.claude/agents/\n.claude/worktrees/\nCLAUDE.local.md\n.worktreeinclude\ntool/ci_local.sh\n' >> .git/info/exclude
+agent-init
+echo 'tool/ci_local.sh' >> .worktreeinclude    # untracked here, so each agent worktree needs it copied in
+echo "lab ready: repo-tab $lab"
+EOF
+
+cat > ~/bin/repo-tab <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+dir=$(cd "$1" && pwd); name=$(basename "$dir")
+kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/agent-orchestration-kit}
+pane=$(wezterm cli spawn --cwd "$dir" -- claude --name "gate-$name" --model opus --settings "$kit/gate-settings.json")
+wezterm cli set-tab-title --pane-id "$pane" "$name"
+EOF
+
+cat > ~/bin/agent-wall.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+task=$1 agent=$2 model=$3 prompt=$4
+repo=$(basename "$(git rev-parse --show-toplevel)")
+name="$repo-$task"
+me=${WEZTERM_PANE:?run from inside WezTerm}
+json=$(wezterm cli list --format json)
+tab=$(jq --argjson p "$me" '.[] | select(.pane_id==$p) | .tab_id' <<<"$json")
+others=($(jq --argjson t "$tab" --argjson p "$me" '.[] | select(.tab_id==$t and .pane_id!=$p) | .pane_id' <<<"$json"))
+(( ${#others[@]} < 3 )) || { echo "tab full: 3 agents already shown for $repo" >&2; exit 1; }
+claude --bg --name "$name" --agent "$agent" --model "$model" \
+  "$prompt  When finished, send your final report to @gate-$repo with SendMessage."
+if (( ${#others[@]} == 0 )); then
+  wezterm cli split-pane --pane-id "$me" --right --percent 55 -- claude attach "$name"
+else
+  wezterm cli split-pane --pane-id "${others[${#others[@]}-1]}" --bottom -- claude attach "$name"
+fi
+EOF
+
+chmod +x ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh
+which make-lab repo-tab agent-wall.sh      # all three must print a path
+```
+
+(macOS ships bash 3.2, so `agent-wall.sh` here avoids `mapfile` and negative array indexes.)
+
+## Step 4. Make the lab copy and open it
+
+```bash
+claude update                                  # agent view and --bg need a recent version
+make-lab ~/Projects/vn_citizen_id_scan         # your repo path here
+repo-tab ~/lab/vn_citizen_id_scan              # opens a new tab with the gate
+```
+
+The first time, Claude asks you to trust `~/lab/vn_citizen_id_scan`. Say yes.
+
+## Step 5. First test (small on purpose)
+
+In the gate tab, type something tiny with 2 independent parts, e.g.:
+
+> Add a `toString()` to `OcrResult` and a unit test for `BoundsSerializer` edge cases. Brainstorm, then plan, then wait for me.
+
+Approve the spec, approve the plan, then say `go`. You should see:
+- 2 panes open on the right of the gate, one per agent
+- each agent finishes with tests green, then the gate says it got a report
+- the gate runs the reviewer and shows you one table
+
+Optional: open another tab and run `claude agents` to see every agent in one list.
+
+## Step 6. Clean up or keep
+
+```bash
+rm -rf ~/lab/vn_citizen_id_scan                                  # throw it away
+git -C ~/Projects/vn_citizen_id_scan fetch ~/lab/vn_citizen_id_scan <branch>   # or keep a branch
+```
+
+## If something breaks
+
+| Symptom | Fix |
+|---|---|
+| `make-lab: command not found` | `source ~/.zshrc`, or open a new WezTerm tab |
+| `no kit at …` | step 2 didn't run; `ls /Users/khoamai/Projects/my_proj/agent-orchestration-kit` |
+| gate never gets the agent's report | gate or agents are in bypass-permissions mode; restart without it |
+| `claude agents` prints a list and exits | `claude update` |
+| agent stuck on "Needs you" | it hit a command not in the allow list; approve it in its pane, then add it to `settings.local.json` in the kit |
+| `tab full` | 3 agents already in this tab; wait or `wezterm cli kill-pane --pane-id N` a finished one |
