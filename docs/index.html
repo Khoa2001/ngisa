@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NGISA</title>
+<meta name="description" content="Run several Claude Code agents in parallel on one repo. They write, test and review. Only you merge.">
+<style>
+:root{--bg:#f3f5f8;--surface:#fff;--fg:#18202c;--muted:#5b6678;--line:#d5dbe5;--gate:#5b45d6}
+@media (prefers-color-scheme:dark){:root{--bg:#10141b;--surface:#19202b;--fg:#e6ebf2;--muted:#9aa5b6;--line:#2a3140;--gate:#9d8cff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+main{max-width:860px;margin:0 auto;padding:40px 16px 56px;display:flex;flex-direction:column;gap:28px}
+h1{margin:0;font-size:clamp(32px,6vw,48px);line-height:1.1}
+h2{margin:0 0 10px;font-size:18px}
+p{margin:0;max-width:65ch}
+.lang{font-size:14px;color:var(--muted)}
+a{color:var(--gate)}
+.lead{font-size:18px}
+.sub{color:var(--muted);margin-top:6px}
+img{width:100%;height:auto;border:1px solid var(--line);border-radius:10px;display:block}
+.note{font-size:13px;color:var(--muted);margin-top:6px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px}
+.cards a{display:block;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;text-decoration:none;color:var(--fg)}
+.cards b{display:block;color:var(--gate)}
+.cards span{font-size:14px;color:var(--muted)}
+code{font:.9em Menlo,ui-monospace,monospace}
+</style>
+</head>
+<body>
+<main>
+<header>
+<div class="lang">English | <a href="index.vi.html">Tiếng Việt</a></div>
+<h1>NGISA</h1>
+<p class="lead">Run several Claude Code agents in parallel on one repo. They write, test and review. Only you merge.</p>
+<p class="sub">NGISA (NGƯỜI GIÁM SÁT, "the supervisor") plans a task, hands the pieces to workers, has every branch reviewed, and stops at a draft PR for you.</p>
+</header>
+<section>
+<img src="assets/ngisa-demo.gif" alt="NGISA plans a task, two workers build it in their own worktrees, a reviewer approves, you merge">
+<p class="note">Illustrative mock-up, not a recording.</p>
+</section>
+<section>
+<h2>Read</h2>
+<div class="cards">
+<a href="diagrams/ngisa-and-agent-wall.html"><b>Diagram</b><span>Window layout and the idea-to-merge flow on one page.</span></a>
+<a href="https://github.com/Khoa2001/ngisa/blob/main/docs/orchestration/one-terminal-orchestrator.md"><b>Full design</b><span>Roles, hooks, human gates, plan limits.</span></a>
+<a href="https://github.com/Khoa2001/ngisa/blob/main/docs/orchestration/lab-quickstart.md"><b>Lab quickstart</b><span>Install the scripts and try it in a throwaway copy.</span></a>
+<a href="https://github.com/Khoa2001/ngisa/blob/main/docs/README.md"><b>Docs index</b><span>Every doc, the repo layout and the scripts.</span></a>
+</div>
+</section>
+<section>
+<h2>Try it</h2>
+<p><code>make-lab ~/Projects/&lt;your-repo&gt;</code><br><code>repo-tab ~/lab/&lt;your-repo&gt;</code></p>
+<p class="note">Needs macOS, WezTerm, jq and a recent Claude Code. Install the scripts first: see Lab quickstart.</p>
+</section>
+<p class="note"><a href="https://github.com/Khoa2001/ngisa">GitHub</a> - Experimental. Runs are logged as research data.</p>
+</main>
+</body>
+</html>
