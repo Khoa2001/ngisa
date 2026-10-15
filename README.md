@@ -32,7 +32,7 @@ Done? `rm -rf ~/lab/<your-repo>`, or fetch a branch from it into the real repo.
 
 ## Learn more
 
-- [`docs/diagrams/ngisa-and-agent-wall.html`](docs/diagrams/ngisa-and-agent-wall.html) ([vi](docs/diagrams/ngisa-and-agent-wall.vi.html)): the window layout and the idea-to-merge flow on one page. Open it in a browser.
+- [Live diagram](https://khoa2001.github.io/ngisa/diagrams/ngisa-and-agent-wall.html) ([vi](https://khoa2001.github.io/ngisa/diagrams/ngisa-and-agent-wall.vi.html)): the window layout and the idea-to-merge flow on one page. Source: [`docs/diagrams/`](docs/diagrams/).
 - [`one-terminal-orchestrator.md`](docs/orchestration/one-terminal-orchestrator.md) ([vi](docs/orchestration/one-terminal-orchestrator.vi.md)): the full design. Roles, hooks, human gates, plan limits.
 - [`lab-setup.md`](docs/orchestration/lab-setup.md) and [`lab-quickstart.md`](docs/orchestration/lab-quickstart.md): try it in a throwaway copy without touching `~/.claude`.
 - [`docs/README.md`](docs/README.md): index of every doc, the repo layout and the scripts.

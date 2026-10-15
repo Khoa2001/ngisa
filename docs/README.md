@@ -13,7 +13,7 @@ Docs from the "hand-off" project: can an agent system ship production software f
 - `cut-verification-time.md` (+ `.vi.md`): cutting the time you spend checking agent output: enforcing hooks, definition of done as commands, gating the plan instead of the diff, CI as second reviewer, what stays human.
 
 ## diagrams/
-- `ngisa-and-agent-wall.html` (+ `.vi.html`): one-page diagram of the window layout and the idea-to-merge flow. Open in a browser.
+- `ngisa-and-agent-wall.html` (+ `.vi.html`): one-page diagram of the window layout and the idea-to-merge flow. GitHub shows HTML as source, so view it at https://khoa2001.github.io/ngisa/diagrams/ngisa-and-agent-wall.html (GitHub Pages, served from `main` `/docs`; `.nojekyll` keeps the Markdown files raw) or open the file in a browser.
 - `ngisa-demo.html`: source of the README GIF. Open with `?step=N&lang=en|vi` for one frame. `render-demo-gif.sh` renders it to `assets/ngisa-demo.gif` and `assets/ngisa-demo.vi.gif` (needs Chrome and `ffmpeg`).
 
 ## assets/
