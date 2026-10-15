@@ -28,7 +28,7 @@ background: true
 ---
 You get ONE task from an approved plan. Work only inside your worktree.
 The task text gives the paths you may touch, the stack and the test command. Anything missing: use the repo contract below. The repo's CLAUDE.md has the stack conventions; follow them. The git, gate and scope rules below always win.
-1. Before you touch any file, run `./tool/setup.sh`. No such file: run the setup commands in CLAUDE.md. Neither exists: stop and report now, edit nothing, do not guess a stack.
+1. Before you touch any file, run `./tool/setup.sh`. No such file: your worktree was probably made with a plain `git worktree add`, which skips `.worktreeinclude`. Run `worktree-include` once (it copies the gate files and secrets that `.worktreeinclude` lists from the main checkout), then run `./tool/setup.sh` again. Still no such file: run the setup commands in CLAUDE.md. Neither exists: stop and report now, edit nothing, do not guess a stack.
 2. TDD: write the failing test, show it red, make it green. Use the task's test command, else the one in CLAUDE.md or `tool/ci_local.sh`.
 3. `./tool/ci_local.sh` must exit 0 before you stop. Never edit `tool/ci_local.sh`, `tool/setup.sh` or `tool/known_failures.txt`, and never run `--record-baseline`. `./tool/ci_local.sh <test paths>` runs just those tests for quick checks; the full gate must still exit 0 before you stop. A test listed in `tool/known_failures.txt` was already failing before you; leave it. Never skip, delete or loosen tests, lint rules or analyzer config to get green. If setup or the gate cannot run, or fails for a reason outside your task, stop and report the exact error. A red gate in the report is fine; a faked green is not.
 4. Commit on your branch. Never push, never merge, never touch main.
@@ -63,6 +63,8 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    Two tasks that touch the same file are NOT parallel; chain them.
 3. Spawn each parallel task with `agent-wall.sh <task-slug> implementer sonnet "<task text>"`.
    Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
+   If you create a worker's worktree yourself with `git worktree add`, git skips `.worktreeinclude`: tell the worker in its task text
+   to run `worktree-include` before anything else, so it gets `tool/setup.sh` and `tool/ci_local.sh`.
    More tasks than free slots: keep a queue in your reply, start the next one each time a worker's report arrives.
    You may not edit code yourself (your settings deny the code dirs), even for a one-line fix. Every code change goes to a worker.
 4. When a worker's report arrives, run the `reviewer` subagent (in-process) on its branch.
@@ -96,7 +98,7 @@ cat > $KIT/settings.local.json <<'EOF'
       "Bash(php -l:*)", "Bash(php tests/:*)", "Bash(diff:*)",
       "Bash(./tool/setup.sh)", "Bash(./tool/ci_local.sh)", "Bash(./tool/ci_local.sh test/*)", "Bash(./tool/ci_local.sh tests/*)",
       "Bash(git status)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)", "Bash(git commit:*)",
-      "Bash(git merge:*)", "Bash(git checkout:*)", "Bash(agent-wall.sh:*)"
+      "Bash(git merge:*)", "Bash(git checkout:*)", "Bash(agent-wall.sh:*)", "Bash(worktree-include)"
     ],
     "deny": [
       "Bash(git push:*)", "Bash(flutter pub publish:*)", "Bash(dart pub publish:*)",
@@ -447,6 +449,27 @@ printf '\033[?25l\033[2J'
 while true; do draw; sleep "$interval"; done
 EOF
 
+cat > ~/bin/worktree-include <<'EOF'
+#!/usr/bin/env bash
+# Run inside a git worktree. Copies the files that the main checkout's .worktreeinclude lists and this worktree lacks
+# (tool/setup.sh, tool/ci_local.sh, secrets, an untracked CLAUDE.md). A plain `git worktree add` skips .worktreeinclude;
+# a worktree that Claude creates does not.
+set -euo pipefail
+here=$(git rev-parse --show-toplevel)
+main=$(git worktree list --porcelain | awk '/^worktree /{print substr($0, 10); exit}')
+if [[ $here == "$main" ]]; then echo "worktree-include: this is the main checkout, nothing to do"; exit 0; fi
+list="$main/.worktreeinclude"
+[[ -f $list ]] || { echo "worktree-include: no $list"; exit 0; }
+n=0
+while IFS= read -r f || [[ -n $f ]]; do
+  case $f in ''|'#'*|*'*'*|*'?'*|*'['*|/*|*..*) continue;; esac     # literal relative paths only
+  if [[ -f "$main/$f" && ! -e "$here/$f" ]]; then
+    mkdir -p "$here/$(dirname "$f")"; cp "$main/$f" "$here/$f"; echo "copied $f"; n=$((n + 1))
+  fi
+done < "$list"
+echo "worktree-include: $n file(s) copied"
+EOF
+
 cat > ~/bin/caveman-ultra-hook <<'EOF'
 #!/usr/bin/env bash
 # SessionStart / UserPromptSubmit hook: keeps the NGISA and its workers in caveman ultra.
@@ -486,8 +509,8 @@ case $url in
 esac
 EOF
 
-chmod +x ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/agent-view ~/bin/caveman-ultra-hook ~/bin/agent-pr
-which make-lab repo-tab agent-wall.sh agent-view agent-pr caveman-ultra-hook      # all six must print a path
+chmod +x ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/agent-view ~/bin/worktree-include ~/bin/caveman-ultra-hook ~/bin/agent-pr
+which make-lab repo-tab agent-wall.sh agent-view worktree-include agent-pr caveman-ultra-hook      # all seven must print a path
 ```
 
 (macOS ships bash 3.2, so `agent-wall.sh` here avoids `mapfile` and negative array indexes.)
@@ -558,4 +581,5 @@ To open a draft PR from the lab instead, tell the NGISA "open a PR" once the fea
 | worker pane blank or garbled | `agent-view` reads the session transcript under `~/.claude/projects/`, an internal format. Use `AGENT_VIEW=attach` until it is fixed |
 | tweakcc customisations gone | Claude Code auto-updated and the new binary is unpatched. Re-run your tweakcc apply script, restart the NGISA, then `claude daemon stop` between tasks so new workers start from the patched binary. `DISABLE_AUTOUPDATER=1` in your shell profile stops the surprise |
 | implementer says setup or the gate cannot run | `agent-init` guessed the stack wrong, or found none. Edit `tool/setup.sh` and `tool/ci_local.sh` in the lab (and in the real repo) by hand: the repo owns them |
+| worker says `tool/setup.sh` is missing | its worktree came from a plain `git worktree add` (git skips `.worktreeinclude`). `worktree-include`, run inside that worktree, copies the files; the implementer is told to run it |
 | `tab full` | 3 agents already in this tab; wait or `wezterm cli kill-pane --pane-id N` a finished one |

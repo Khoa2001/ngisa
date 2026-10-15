@@ -22,3 +22,9 @@ From a busy-bees screenshot: worker panes showed an input box, the NGISA answere
 - `agent-wall.sh` splitting real WezTerm panes with `agent-view` (running it from this session would have split the user's own pane).
 - The NGISA's replies over a whole task after the change. Log any drift next run.
 - Whether the transcript format survives a Claude Code update: `agent-view` reads `~/.claude/projects/*/<sessionId>.jsonl`, an internal format (read-only).
+
+## Follow-up: worker worktrees without gate files
+- busy-bees run: the worker report said its worktree had no `tool/`, so it never ran `./tool/setup.sh` or the gate. The task text told it to create the worktree with a plain `git worktree add` (the NGISA's saved memory says EnterWorktree workers get git blocked, so use `git worktree add`). Git skips `.worktreeinclude`; a worktree that Claude creates does not.
+- Fix: new `~/bin/worktree-include` (in the quickstart): run inside a worktree, it copies the literal paths that the main checkout's `.worktreeinclude` lists and the worktree lacks. `Bash(worktree-include)` is in the allow list; implementer step 1 runs it when `tool/setup.sh` is missing; `orchestrating.md` tells the NGISA to say so in the task text when it makes the worktree itself.
+- Checked: in a throwaway repo a plain worktree had no `tool/`; `worktree-include` copied the files, skipped `..`, glob and absolute entries, and did nothing on a second run or in the main checkout. A real `claude -p --agent implementer` run in such a worktree (cost 0.13): setup.sh failed with exit 127, the worker ran `worktree-include`, retried, and got SETUP-RAN.
+- Not changed: the user's NGISA memory (outside this repo). Still open: the busy-bees baseline (`tool/known_failures.txt` missing) is the user's `--record-baseline` run.
