@@ -2,7 +2,7 @@
 
 Bottom line: don't build this, and don't install a third-party tmux manager. Claude Code now ships
 everything you described. Your "NGISA" is **one Opus orchestrator session** that plans, then dispatches
-**worktree-isolated Sonnet implementer subagents** in the background and an **Opus reviewer** on each result.
+**worktree-isolated Sonnet implementer subagents** in the background and a `gate-check` script on each result (you review the diff yourself).
 When you have several *independent* features going, **agent view** (`claude agents`) is the one screen
 that shows all of them. Agent teams look like exactly what you asked for, but they don't isolate agents in
 worktrees and they're experimental. Don't use them for code yet.
@@ -39,7 +39,7 @@ Most of this lives in your home folder and applies to every repo. Only three sma
 
 | Piece | Where | Scope |
 |---|---|---|
-| `implementer.md`, `reviewer.md` | `~/.claude/agents/` | once, all repos |
+| `implementer.md` | `~/.claude/agents/` | once, all repos |
 | Orchestrating rules | `~/.claude/CLAUDE.md` (or a user skill `~/.claude/skills/orchestrate/`) | once |
 | Format hook, Stop gate, irreversible-command block, permission allowlist | `~/.claude/settings.json` | once |
 | `agent-wall.sh` | `~/bin/` (on PATH) | once |
@@ -105,25 +105,7 @@ The task text gives the paths you may touch, the stack and the test command. Any
 Do not edit files outside the task's listed paths. If you must, stop and say so.
 ```
 
-`~/.claude/agents/reviewer.md`
-
-```markdown
----
-name: reviewer
-description: Reviews one implementer branch against the plan task and the spec. Read-only.
-model: opus
-tools: Read, Grep, Glob, Bash, SendMessage
----
-Diff the given branch against its base. Check: does it do the task as written, are tests real
-(would they fail without the change), any edits outside the task's paths, logging or leaking of
-sensitive data (PII, card data, tokens, secrets), anything irreversible.
-Gate integrity: run `diff` on `tool/ci_local.sh`, `tool/setup.sh` and (if it exists) `tool/known_failures.txt` between the branch's worktree and the
-main checkout (`$(git rev-parse --path-format=absolute --git-common-dir)/..`). In a lab these files are untracked,
-so the git diff will not show them. Any difference is a BLOCK unless the task asked for it. Also BLOCK on weakened
-checks: a new line in `tool/known_failures.txt`, tests removed or skipped, assertions relaxed, lint or analyzer config loosened, new ignore/suppress comments.
-Output: APPROVE or BLOCK, then a numbered list of findings with file:line. Write it in caveman ultra (no articles or filler, fragments OK); paths, commands and quoted errors stay exact.
-You run as a background worker with a pane the user watches. Send the verdict to the NGISA named in your task with SendMessage: summary = `APPROVE` or `BLOCK`, then the number of findings; message = the full numbered list. Do not edit files.
-```
+There is no reviewer agent. You read the diff; `gate-check` (see `lab-quickstart.md`, step 3) only guards the gate files and the lint config.
 
 ### 2b. Worktree hygiene for Flutter
 
@@ -147,19 +129,20 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    and the test command, and that text goes into the worker's prompt. A repo can mix stacks: name the stack per task.
    Two tasks that touch the same file are NOT parallel; chain them.
 3. Dispatch parallel tasks to `implementer` (max 3 at once). Chain dependent ones.
-4. For each finished task, dispatch `reviewer` on its branch. BLOCK → send findings back to a new implementer on that branch. Max 2 rounds, then escalate to me.
+4. For each finished task, run `gate-check <branch> <base branch>`. Exit 1: stop, show me its output, do not merge that branch until I decide. Exit 0: go on. It only compares the gate files and the lint/analyzer/CI config; I read the diff myself, so do not add your own review.
 5. Only one agent runs integration tests / the emulator at a time.
-6. Merge APPROVED task branches into the feature branch locally, run ./tool/ci_local.sh, push the feature branch, open a DRAFT PR.
-7. Report to me: one table (task | branch | reviewer verdict | tests | unverified items), plus the PR link.
+6. Merge task branches that passed the latest gate-check (or that I allowed) into the feature branch locally, run ./tool/ci_local.sh, push the feature branch, open a DRAFT PR.
+7. Report to me: one table (task | branch | gate-check | tests | unverified items), plus the PR link.
 Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
-  Spawn ONE implementer with exactly those paths, then run the reviewer as usual. Anything bigger: say it needs a plan.
+  Spawn ONE implementer with exactly those paths, then run gate-check as usual. Anything bigger: say it needs a plan.
 Relay: when I ask for something extra from a worker (e.g. "have it carve", "fix the lint"), SendMessage it to
   that worker (same session, same branch). For carve: tell it to run /carve; I answer its prompts with `claude attach <name>` (worker panes are read-only).
+  After any relay that changes a worker's commits, run gate-check on that branch again before merging.
 Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, questions, report tables): drop articles, filler,
   pleasantries, hedging; fragments OK; abbreviate (DB, auth, config, req, res, fn); arrows for causality. Paths, branches, commands,
   session ids, quoted errors: exact. Code, commits, PR text, security warnings: normal.
-  Not: "I have started the implementer worker. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Reviewer next."
-  Long text too (reviewer verdicts, findings, decisions): numbered fragments, never prose paragraphs.
+  Not: "I have started the implementer worker. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Gate-check next."
+  Long text too (findings, decisions): numbered fragments, never prose paragraphs.
   Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."
 Never: merge to main, force-push, publish, touch store/remote-config/signing, delete branches with unmerged work.
 ```
@@ -183,9 +166,9 @@ repo-tab ~/code/my_app        # this tab becomes the repo's NGISA (new tab if th
 > /superpowers:brainstorming  … → spec. You read the spec.          # HUMAN GATE 1: intent
 > writing-plans …             → plan + paths per task. You approve. # HUMAN GATE 2: plan
 > "execute the plan per Orchestrating rules"
-   → implementers run in the background in worktrees, reviewer checks each one
+   → implementers run in the background in worktrees, gate-check runs on each one
    → you get one table + a draft PR link
-# CI green + reviewer APPROVE on all tasks → you review the PR summary and golden diffs  # HUMAN GATE 3
+# CI green + gate-check clean on all tasks → you review the PR summary and golden diffs  # HUMAN GATE 3
 # You merge.                                                         # HUMAN GATE 4: irreversible
 ```
 
@@ -220,7 +203,7 @@ spawn script), but don't:
 - **It plans blind.** A session loads `CLAUDE.md`, project settings and skills from the folder it starts
   in. An NGISA in `~/code` doesn't load the scanner's `CLAUDE.md` or Definition of done while it writes
   the plan, and the plan is the step that matters most.
-- **One context for everything.** Specs, plans and reviewer verdicts for three repos pile into one
+- **One context for everything.** Specs, plans and findings for three repos pile into one
   conversation, it compacts sooner, and compaction drops plan details first.
 - **One failure stops all repos.** A stuck permission prompt or a usage-limit wait in the NGISA
   stalls every repo's work.
@@ -282,8 +265,7 @@ Notes:
   each agent reports to its own repo's NGISA (`@ngisa-scanner`).
 - Each agent is a background session started from the repo, so its worktree is in that repo's
   `.claude/worktrees/`. Repos never share worktrees.
-- Reviewer panes: a task name ending in `-review` (`-review2` for a second round) opens to the right of that implementer's pane, so each row is implementer | reviewer. `agent-wall.sh` remembers the pane ids it opens in `~/.cache/ngisa/panes/<session>`; reviewers do not count toward the 3 worker slots. The shipped script is in `lab-quickstart.md`, step 3.
-- Panes are read-only views (`agent-view` shows status only: the name, `working` / `needs you` / `done` with the time, one dim line (the branch) and one result line (the commit for an implementer, `N findings` for a reviewer, whose status reads `reviewing`, then `APPROVED` or `BLOCK`); a `quiet for Nm` line after 2 minutes without a move, and a red line if the NGISA never got the result; no input box; `AGENT_VIEW_DETAIL=1` brings back the full view). The NGISA's status line shows a `workers` roster (`ngisa-statusline`, wired in by `repo-tab`). To answer a worker that shows `needs you`, `claude attach <name>` in a spare pane. Closing a pane never stops the agent; `wezterm cli kill-pane` when done.
+- Panes are read-only views (`agent-view` shows status only: the name, `working` / `needs you` / `done` with the time, one dim line (the branch) and one result line (the commit); a `quiet for Nm` line after 2 minutes without a move, and a red line if the NGISA never got the result; no input box; `AGENT_VIEW_DETAIL=1` brings back the full view). The NGISA's status line shows a `workers` roster (`ngisa-statusline`, wired in by `repo-tab`). To answer a worker that shows `needs you`, `claude attach <name>` in a spare pane. Closing a pane never stops the agent; `wezterm cli kill-pane` when done.
 - The "tab full" check counts panes, not running agents. If you closed a pane early, the agent still
   runs and still counts against your quota; check `claude agents`.
 - Check `wezterm cli list --format json` on your version prints `tab_id`; it should.
@@ -295,10 +277,9 @@ Notes:
    Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
    If you create a worker's worktree yourself with `git worktree add`, git skips `.worktreeinclude`: tell the worker in its task text
    to run `worktree-include` before anything else, so it gets `tool/setup.sh` and `tool/ci_local.sh`.
-4. When a worker's report arrives, start its reviewer in a visible pane to the right of that worker's pane:
-   `agent-wall.sh <task-slug>-review reviewer opus "<branch, base branch, worktree path, the plan task text>"` (round 2: `<task-slug>-review2`).
-   The verdict arrives as a message (APPROVE or BLOCK first): wait for it, do not poll. Reviewers do not count toward the 3 workers.
-   BLOCK -> message that worker with the findings (same session, same branch). Max 2 rounds, then ask me.
+4. When a worker's report arrives, run `gate-check <branch> <base branch>` (branch from the report; base is the branch the plan was cut from).
+   Exit 0: go on. Exit 1 (findings) or 2 (error, e.g. wrong branch name): stop, show me its output, do not merge that branch until I decide. It only compares the gate files and the
+   lint/analyzer/CI config; I read the diff myself, so do not add your own review.
 ```
 
 Allow exactly `"Bash(agent-wall.sh:*)"` in `~/.claude/settings.json`. Don't allow `Bash(wezterm cli:*)`.
@@ -314,18 +295,18 @@ Agent teams' split-pane mode only drives tmux or iTerm2, not WezTerm, so it can'
 
 1. **Spec / acceptance criteria.** Intent. Agents can't know it.
 2. **Plan approval, including the task split.** A bad split = merge conflicts × N agents.
-3. **Reviewer vs implementer disagreement after 2 rounds.** You decide.
+3. **A failed `gate-check`.** You decide: keep the change (the task asked for it) or send the worker back.
 4. **Merge to main, releases, pub.dev, store, remote config, signing, secrets.** Hook-blocked, so only you can.
 5. **Anything handling card/PII data.** Read it yourself every time.
 6. **Device feel** (camera, scan UX). Once per feature at the end.
 
-Everything else (format, analyze, tests, routing, per-task review) is the machine's job.
+Everything else (format, analyze, tests, routing, per-task `gate-check`) is the machine's job.
 
 ## 5. Max plan: the limits will bite
 
 - Every background agent, subagent and workflow agent draws on the **same** 5-hour and weekly allowance.
   The docs are blunt: 10 parallel agents burn quota ~10× as fast. Agent teams ~7× a single session.
-- Opus only for orchestrator + reviewer. Sonnet for implementers. Haiku for mechanical sweeps.
+- Opus only for the orchestrator. Sonnet for implementers. Haiku for mechanical sweeps.
   Never let implementers inherit an Opus orchestrator's model; pin `model: sonnet` in the agent file.
 - **Cap parallelism at 3** to start. Raise it only if `/usage` shows headroom at the end of a week.
 - Turn on `autoContinueAtUsageLimit` so a run waits for reset instead of failing mid-task.
@@ -343,13 +324,13 @@ Everything else (format, analyze, tests, routing, per-task review) is the machin
 
 The project bets that parallel worktree agents beat one long-context agent on big tasks. Test it:
 run the next two comparable features one each way and log per feature:
-`wall-clock | your minutes | interventions (intent / plan-wrong / merge-conflict / test-gap / taste / irreversible / agent-error) | reviewer BLOCKs | CI red after merge | % of 5h window used`.
+`wall-clock | your minutes | interventions (intent / plan-wrong / merge-conflict / test-gap / taste / irreversible / agent-error) | gate-check FAILs | CI red after merge | % of 5h window used`.
 If "merge-conflict" and "plan-wrong" dominate on the parallel run, the task split is the problem, not the agents.
 
 ## Roll-out order
 
 1. Verification hooks + `ci_local.sh` (from the previous playbook) if not done.
-2. `implementer.md` + `reviewer.md` + `.worktreeinclude` + `.gitignore`.
+2. `implementer.md` + `.worktreeinclude` + `.gitignore`.
 3. Orchestrator rules + `PreToolUse` block hook + permission allowlist.
 4. One feature through the flow with max 2 parallel implementers. Fix what breaks.
 5. Then 3 parallel, then open a second repo tab.
