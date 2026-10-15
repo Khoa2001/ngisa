@@ -71,3 +71,30 @@ From a busy-bees screenshot: worker panes showed an input box, the NGISA answere
 
 ### Not tested
 - The `thinking 2m 40s` counter on a live worker; whether the longer caveman rule holds on a full task (needs a fresh `repo-tab` so the new system prompt applies).
+
+## Follow-up: three workers at once (2026-10-15)
+- First run with three parallel busy-bees test workers (`feed-html`, `color-ex`, `like-button-util`) and the clean pane. Roster, per-worker branch and worktree, `now`, `thinking` and the phase symbols all showed correctly; the NGISA summary came back as numbered fragments.
+- Layout bug: the three panes were 1/2, 1/4 and 1/4 of the column, because each new pane split the last pane in half. `agent-wall.sh` now gives the new pane `n/(n+1)` of the last pane (`--percent`), so the column is split in equal thirds.
+- Counter bug: a worker seconds after `git worktree add` showed `1531 files · +0 -221291`, because the diff against the base saw a half-checked-out worktree as thousands of deleted files. `agent-view` now shows `preparing worktree` when more than 100 listed files are missing on disk or the worktree has an `index.lock`.
+
+### Checked
+- Replay on the four busy-bees workers: counters unchanged for finished and working workers. `bash -n agent-wall.sh`; the percent maths gives 50 for the second pane and 66 for the third. Quickstart blocks equal `~/bin`.
+
+### Not tested
+- The new split in a real WezTerm tab with three workers, and `preparing worktree` on a live checkout.
+
+## Follow-up: reviewer in its own pane (2026-10-15)
+- Request: the reviewer should not be hidden inside the NGISA; the user wants a terminal to the right of that implementer's pane. The reviewer was an in-process subagent, so there was no session to show.
+- Design (approved in chat, read-only view chosen over a full interactive pane): the NGISA starts the reviewer through `agent-wall.sh <task>-review reviewer opus "<...>"` and waits for its verdict message; a BLOCK sends the findings back to the same implementer (max 2 rounds, `-review2` for the second review). Reviewers do not count toward the 3 worker slots.
+- `agent-wall.sh` remembers every pane it opens in `~/.cache/ngisa/panes/<session>` (the id `wezterm cli split-pane` prints), drops files of closed panes, counts only implementer panes for the "tab full" check and the equal-height split, and opens a `-review` / `-reviewN` pane `--right` of the previous round's pane, else of the implementer's pane, else at the bottom of the column.
+- `agent-view` detects the reviewer by its `-review` name: phases `diff · gate files · tests · verdict · report`, chip `reviewing`, second line `reviewing <branch>`, counters `N steps · verdict pending|approved|block`, and a final line `APPROVED` (green) or `BLOCK` (red) with the summary and `report delivered`. A BLOCK also marks `✗ verdict`.
+- Kit: `agents/reviewer.md` gets `SendMessage` and a line telling it to send the verdict (summary `APPROVE` or `BLOCK` first); `orchestrating.md` step 4; `ngisa-statusline` and the quickstart no longer say the reviewer is invisible to the roster. Synced into `~/lab/busy-bees`.
+
+### Checked
+- `agent-wall.sh` with fake `wezterm`, `claude` and pane lists: implementer 1 opens right of the NGISA (55%), implementer 2 splits the bottom at 50%, the review of 1 opens right of pane 1, implementer 3 splits the last implementer pane at 66% (not the reviewer pane), the review round 2 opens right of round 1, and a fourth implementer stops with "tab full". State files are written per session name.
+- `agent-view` on a synthetic reviewer transcript: `diff`, `gate files` and `tests` ticked, `✗ verdict` with `BLOCK  2 findings · report delivered`, counters `4 steps · verdict block`.
+- Quickstart script blocks equal `~/bin`; `bash -n` on the scripts.
+
+### Not tested
+- A real reviewer started from the NGISA: whether the permission allow list covers its `git diff`, `diff` and `fvm flutter test` calls in a background session, whether the verdict message reaches the NGISA, and the async BLOCK loop with two rounds.
+- WezTerm: the `--right` split of an implementer pane in a real tab.

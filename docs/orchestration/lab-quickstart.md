@@ -42,7 +42,7 @@ cat > $KIT/agents/reviewer.md <<'EOF'
 name: reviewer
 description: Reviews one implementer branch against the plan task and the spec. Read-only.
 model: opus
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, SendMessage
 ---
 Diff the given branch against its base. Check: does it do the task as written, are tests real
 (would they fail without the change), any edits outside the task's paths, logging or leaking of
@@ -52,7 +52,7 @@ main checkout (`$(git rev-parse --path-format=absolute --git-common-dir)/..`). I
 so the git diff will not show them. Any difference is a BLOCK unless the task asked for it. Also BLOCK on weakened
 checks: a new line in `tool/known_failures.txt`, tests removed or skipped, assertions relaxed, lint or analyzer config loosened, new ignore/suppress comments.
 Output: APPROVE or BLOCK, then a numbered list of findings with file:line. Write it in caveman ultra (no articles or filler, fragments OK); paths, commands and quoted errors stay exact.
-Do not edit files.
+You run as a background worker with a pane the user watches. Send the verdict to the NGISA named in your task with SendMessage: summary = `APPROVE` or `BLOCK`, then the number of findings; message = the full numbered list. Do not edit files.
 EOF
 
 cat > $KIT/orchestrating.md <<'EOF'
@@ -68,7 +68,9 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    to run `worktree-include` before anything else, so it gets `tool/setup.sh` and `tool/ci_local.sh`.
    More tasks than free slots: keep a queue in your reply, start the next one each time a worker's report arrives.
    You may not edit code yourself (your settings deny the code dirs), even for a one-line fix. Every code change goes to a worker.
-4. When a worker's report arrives, run the `reviewer` subagent (in-process) on its branch.
+4. When a worker's report arrives, start its reviewer in a visible pane to the right of that worker's pane:
+   `agent-wall.sh <task-slug>-review reviewer opus "<branch, base branch, worktree path, the plan task text>"` (round 2: `<task-slug>-review2`).
+   The verdict arrives as a message (APPROVE or BLOCK first): wait for it, do not poll. Reviewers do not count toward the 3 workers.
    BLOCK -> message that worker with the findings (same session, same branch). Max 2 rounds, then ask me.
 5. Only one agent runs integration tests / the emulator at a time.
 6. Merge APPROVED task branches into a local feature branch and run ./tool/ci_local.sh. This is a lab: never push on your own.
@@ -388,16 +390,46 @@ me=${WEZTERM_PANE:?run from inside WezTerm}
 json=$(wezterm cli list --format json)
 tab=$(jq --argjson p "$me" '.[] | select(.pane_id==$p) | .tab_id' <<<"$json")
 others=($(jq --argjson t "$tab" --argjson p "$me" '.[] | select(.tab_id==$t and .pane_id!=$p) | .pane_id' <<<"$json"))
-(( ${#others[@]} < 3 )) || { echo "tab full: 3 agents already shown for $repo" >&2; exit 1; }
+# pane ids of the panes this script opened, one file per session name; files of closed panes are dropped
+state="${XDG_CACHE_HOME:-$HOME/.cache}/ngisa/panes"
+mkdir -p "$state"
+alive() { local id; for id in ${others[@]+"${others[@]}"}; do [[ $id == "$1" ]] && return 0; done; return 1; }
+for f in "$state/$repo"-*; do [[ -f $f ]] && ! alive "$(cat "$f")" && rm -f "$f"; done
+# the right-hand column holds the implementer panes; reviewer panes (names ending in -review, -review2 ...) sit beside them
+impl=()
+for id in ${others[@]+"${others[@]}"}; do
+  is_review=0
+  for f in "$state/$repo"-*-review*; do [[ -f $f && $(cat "$f") == "$id" ]] && is_review=1; done
+  (( is_review )) || impl+=("$id")
+done
+target=""
+if [[ $task =~ ^(.+)-review([0-9]*)$ ]]; then
+  base=${BASH_REMATCH[1]} cur=${BASH_REMATCH[2]:-1}
+  # right of the previous review round if its pane is open, else right of the implementer's pane
+  cands=()
+  for (( r = cur - 1; r >= 2; r-- )); do cands+=("$repo-$base-review$r"); done
+  if (( cur > 1 )); then cands+=("$repo-$base-review"); fi
+  cands+=("$repo-$base")
+  for cn in "${cands[@]}"; do
+    if [[ -f $state/$cn ]]; then target=$(cat "$state/$cn"); break; fi
+  done
+elif (( ${#impl[@]} >= 3 )); then
+  echo "tab full: 3 agents already shown for $repo" >&2; exit 1
+fi
 claude --bg --name "$name" --agent "$agent" --model "$model" \
   "$prompt  When finished, send your final report to @ngisa-$repo with SendMessage."
 # panes are read-only views by default (agent-view); AGENT_VIEW=attach gives the full claude attach pane with an input box
 if [[ ${AGENT_VIEW:-view} == attach ]]; then viewer=(claude attach "$name"); else viewer=("$(command -v agent-view)" "$name"); fi
-if (( ${#others[@]} == 0 )); then
-  wezterm cli split-pane --pane-id "$me" --right --percent 55 -- "${viewer[@]}"
+if [[ -n $target ]]; then
+  new=$(wezterm cli split-pane --pane-id "$target" --right --percent 50 -- "${viewer[@]}")
+elif (( ${#impl[@]} == 0 )); then
+  new=$(wezterm cli split-pane --pane-id "$me" --right --percent 55 -- "${viewer[@]}")
 else
-  wezterm cli split-pane --pane-id "${others[${#others[@]}-1]}" --bottom -- "${viewer[@]}"
+  # equal heights: the last pane holds 1/n of the column, so the new one takes n/(n+1) of that pane
+  n=${#impl[@]}
+  new=$(wezterm cli split-pane --pane-id "${impl[n-1]}" --bottom --percent $(( 100 * n / (n + 1) )) -- "${viewer[@]}")
 fi
+echo "$new" > "$state/$name"
 EOF
 
 cat > ~/bin/agent-view <<'EOF'
@@ -647,6 +679,26 @@ def classify(name, inp, wt):
     return None, "run", "running " + n, "ran " + n
 
 
+REVIEW_PHASES = ["diff", "gate files", "tests", "verdict", "report"]
+VERDICT_RE = re.compile(r"\b(APPROVED?|BLOCK(?:ED)?)\b")
+
+
+def review_phase(name, inp):
+    """Reviewer panes use their own strip. -> (phase, doing, did) or None."""
+    inp = inp or {}
+    if name == "SendMessage" and "ngisa" in str(inp.get("to", "")):
+        return "report", None, None
+    if name == "Bash":
+        cmd = str(inp.get("command", ""))
+        if re.search(r"\bdiff\b", cmd) and re.search(r"tool/|known_failures", cmd):
+            return "gate files", "comparing gate files", "compared gate files"
+        if TEST_RE.search(cmd) or "ci_local.sh" in cmd:
+            return "tests", None, None
+        if re.search(r"git\s+(-C\s+\S+\s+)?(diff|log|show|merge-base)", cmd):
+            return "diff", "reading the diff", "read the diff"
+    return None
+
+
 def load_session(name):
     out = run(["claude", "agents", "--json", "--all"])
     try:
@@ -749,9 +801,9 @@ def fmt_mark(sec):
 PHASES = ["setup", "code", "test", "gate", "commit", "report"]
 
 
-def strip(hit, cur, state, bad):
+def strip(hit, cur, state, bad, phases=PHASES):
     out = []
-    for p in PHASES:
+    for p in phases:
         if p in bad:
             out.append(c(RED, "✗ " + p))
         elif p in hit and (p != cur or state == "done"):
@@ -781,11 +833,13 @@ def draw(name):
     sid = info.get("sessionId", "")
     found = glob.glob(os.path.expanduser(f"~/.claude/projects/*/{sid}.jsonl"))
     events, cwd, model, last_ts, last_text = parse(found[0]) if found else ([], None, "", None, "")
+    reviewer = bool(re.search(r"-review\d*$", name))
     wt = find_worktree(events, cwd or info.get("cwd") or ".")
     started = (info.get("startedAt") or 0) / 1000 or next((e["ts"] for e in events if e.get("ts")), None)
 
     # classify every event once
     log, hit, cur, gate, gate_text, report, report_why, pending = [], set(), None, None, "", None, "", None
+    verdict, verdict_text, steps, reviewed = "", "", 0, ""
     last_activity = None
     for ev in events:
         last_activity = max([t for t in (last_activity, ev.get("ts"), ev.get("rts")) if t], default=None)
@@ -793,6 +847,22 @@ def draw(name):
             log.append({"ts": ev["ts"], "kind": "say", "did": ev["text"].splitlines()[0]})
             continue
         phase, kind, doing, did = classify(ev["name"], ev["input"], wt)
+        if reviewer:
+            rp = review_phase(ev["name"], ev["input"])
+            phase = rp[0] if rp else None
+            if rp and rp[1]:
+                doing, did = rp[1], rp[2]
+            if ev["name"] == "Bash":
+                m = re.search(r"git\s+(?:-C\s+\S+\s+)?(?:diff|log)\s+(?:--?\S+\s+)*\S+?\.{2,3}([\w./-]+)", str((ev["input"] or {}).get("command", "")))
+                reviewed = m.group(1) if m else reviewed
+            if ev["name"] == "SendMessage" and "ngisa" in str((ev["input"] or {}).get("to", "")):
+                body = json.dumps(ev["input"], ensure_ascii=False)
+                m = VERDICT_RE.search(body)
+                if m:
+                    verdict = "APPROVED" if m.group(1).startswith("APPROVE") else "BLOCK"
+                    tail_txt = str((ev["input"] or {}).get("summary") or "")
+                    verdict_text = re.sub(VERDICT_RE, "", tail_txt, count=1).strip(" :-.,") or ""
+        steps += 1
         res, text = ev["result"], result_text(ev["result"])
         failed = bool(res and res.get("is_error"))
         if kind == "noise":
@@ -803,7 +873,7 @@ def draw(name):
                 report_why = plain_error(text)
             else:
                 report = "ok"
-        if phase == "test" and res is not None:
+        if phase in ("test", "tests") and res is not None:
             tail = text[-400:]
             did += ", failed" if FAIL_RE.search(tail) and not PASS_RE.search(tail) else (", passed" if PASS_RE.search(tail) else "")
         if phase == "gate":
@@ -829,11 +899,14 @@ def draw(name):
     base = git(main_wt, "branch", "--show-current") or "main"
     branch = git(wt, "branch", "--show-current") or "?"
     in_own = os.path.realpath(wt) != os.path.realpath(main_wt)
-    changed, add, rem, commit, subject = set(), 0, 0, "", ""
+    changed, add, rem, commit, subject, preparing = set(), 0, 0, "", "", False
     if in_own:
         mb = git(wt, "merge-base", base, "HEAD") or base
-        for l in git(wt, "diff", "--numstat", mb).splitlines():
-            a, r, f = (l.split("\t") + ["", "", ""])[:3]
+        rows = [(l.split("\t") + ["", "", ""])[:3] for l in git(wt, "diff", "--numstat", mb).splitlines()]
+        # a worktree that is still being checked out looks like thousands of deleted files
+        gone = [f for a, r, f in rows if a == "0" and r.isdigit() and not os.path.exists(os.path.join(wt, f))]
+        preparing = len(gone) > 100 or os.path.exists(git(wt, "rev-parse", "--git-path", "index.lock") or "/nonexistent")
+        for a, r, f in ([] if preparing else rows):
             if f.startswith("tool/"):
                 continue
             changed.add(f)
@@ -853,18 +926,26 @@ def draw(name):
 
     end = iso_to_epoch(last_ts) if state == "done" and last_ts else time.time()
     elapsed = fmt_dur((end or time.time()) - started) if started else "?"
-    chip = {"working": c(TEAL, "working"), "running": c(TEAL, "working"), "busy": c(TEAL, "working"),
+    working = "reviewing" if reviewer else "working"
+    chip = {"working": c(TEAL, working), "running": c(TEAL, working), "busy": c(TEAL, working),
             "blocked": c(AMBER, "needs you"), "done": c(GREEN, "done"), "idle": dim("idle")}.get(state, dim(state))
     short_model = model.replace("claude-", "") or "?"
 
     right = chip + dim(f" · {short_model} · {elapsed}")
     lines = [split(bold(clip(name, w - vis(right) - 2)), right, w)]
     shown = os.path.relpath(wt, main_wt) if in_own and wt.startswith(main_wt.rstrip("/") + "/") else wt.replace(os.path.expanduser("~"), "~", 1)
-    lines.append(dim(clip(f"{branch} · {shown}" if in_own else f"{branch if branch != '?' else 'no branch'} · in the main checkout", w)))
+    if reviewer:
+        lines.append(dim(clip("reviewing " + (reviewed or re.sub(r"-review\d*$", "", name)), w)))
+    else:
+        lines.append(dim(clip(f"{branch} · {shown}" if in_own else f"{branch if branch != '?' else 'no branch'} · in the main checkout", w)))
     lines.append("")
 
     # state line: what needs the human, or how it ended
     bad = set()
+    if verdict == "BLOCK":
+        bad.add("verdict")
+    if verdict:
+        hit.add("verdict")
     if gate == "failed":
         bad.add("gate")
     if report == "failed":
@@ -879,6 +960,12 @@ def draw(name):
             lines.append(c(AMBER, "waiting for you"))
         lines.append(dim("answer with: ") + f"claude attach {name}")
         lines.append("")
+    elif state == "done" and reviewer:
+        col = GREEN if verdict == "APPROVED" else (RED if verdict else "2")
+        tail = c(GREEN, "report delivered") if report == "ok" else (c(RED, "report NOT delivered") if report == "failed"
+                                                                     else dim("no report sent"))
+        lines.append(c(col, (verdict or "done") + "  ") + clip(verdict_text, max(w - len(verdict or "done") - 26, 10)) + dim(" · ") + tail)
+        lines.append("")
     elif state == "done":
         tail = c(GREEN, "report delivered") if report == "ok" else (c(RED, "report NOT delivered") if report == "failed"
                                                                      else dim("no report sent"))
@@ -892,11 +979,14 @@ def draw(name):
     if (gate == "failed" and state != "done") or report == "failed":
         lines.append("")
 
-    lines.append(strip(hit, cur, state, bad))
-    ctr = [f"{len(changed)} file{'s' if len(changed) != 1 else ''}"]
-    if changed:
-        ctr.append(f"+{add} −{rem}")
-    ctr.append({"running": "gate running", "failed": "gate failed", "passed": "gate passed", "ran": "gate ran"}.get(gate, "gate not run"))
+    lines.append(strip(hit, cur, state, bad, REVIEW_PHASES if reviewer else PHASES))
+    if reviewer:
+        ctr = [f"{steps} step{'s' if steps != 1 else ''}", "verdict " + (verdict.lower() if verdict else "pending")]
+    else:
+        ctr = ["preparing worktree"] if preparing else [f"{len(changed)} file{'s' if len(changed) != 1 else ''}"]
+        if changed:
+            ctr.append(f"+{add} −{rem}")
+        ctr.append({"running": "gate running", "failed": "gate failed", "passed": "gate passed", "ran": "gate ran"}.get(gate, "gate not run"))
     lines.append(dim(" · ".join(ctr)))
     lines.append("")
 
@@ -959,7 +1049,7 @@ cat > ~/bin/ngisa-statusline <<'EOF'
 
 Reads the status-line JSON on stdin. Runs your own status-line command (NGISA_BASE_STATUSLINE, else statusLine.command from
 ~/.claude/settings.json, which is only read) with the same input and prints its output first. Any failure here leaves your
-own line untouched. The reviewer runs inside the NGISA, so it is not a background session and is not listed.
+own line untouched. The reviewer is also a background worker (a `-review` pane) and is listed like the others.
 """
 import hashlib, json, os, subprocess, sys, tempfile, time
 
@@ -1145,7 +1235,8 @@ In the NGISA tab, type something tiny with 2 independent parts, e.g.:
 Approve the spec, approve the plan, then say `go`. The NGISA answers in caveman ultra (the hook in `settings.local.json`). You should see:
 - 2 panes open on the right of the NGISA, one per agent. They are read-only views (`agent-view`): a two-line header (name, state, model, elapsed; branch and worktree), a blocked or done line when it matters (`waiting`, `gate failed`, `report NOT delivered`, `done <hash> ... report delivered`), a phase strip (`✓` done, `▶` now, `·` later, `✗` failed), one counters line (files, `+added −removed`, gate state), a `now` line, and a short plain-language log with times, newest first. No input box. The NGISA's status line adds a `workers` roster (`ngisa-statusline`). To answer a worker that shows `needs you`, run `claude attach <name>` in a spare pane. `AGENT_VIEW=attach` makes `agent-wall.sh` open the full `claude attach` pane instead.
 - each agent finishes with tests green, then the NGISA says it got a report
-- the NGISA runs the reviewer and shows you one table
+- a reviewer pane opens to the right of that agent's pane (`<task>-review`, a read-only view like the others: `diff`, `gate files`, `tests`, `verdict`, `report`); its verdict `APPROVED` or `BLOCK` shows in the pane header
+- the NGISA collects the verdicts and shows you one table
 
 Optional: run `claude agents` in a spare tab to see every agent in one list. `repo-tab` does not open an overview tab.
 
@@ -1171,7 +1262,7 @@ To open a draft PR from the lab instead, tell the NGISA "open a PR" once the fea
 | `agent-pr: no 'upstream' remote` | the lab was made before this script existed: `git remote add upstream <real-url>` in the lab |
 | NGISA not in caveman | `which caveman-ultra-hook` must print a path; `ls ~/lab/<repo>/.claude/settings.local.json` must have a `hooks` block. The rule also rides in the NGISA's system prompt (`repo-tab` passes `--append-system-prompt`), so restart the NGISA after changing it. Hook and prompt together only make drift rarer; log any drift in the run log |
 | worker pane shows a wrong phase tick | the phase strip and gate line are guesses from the transcript (shell commands are classified by pattern); the log under it is the ground truth. `AGENT_VIEW=attach` for the full pane |
-| no `workers` line in the NGISA status line | `which ngisa-statusline` must print a path, and the NGISA must be started with the new `repo-tab`. Only workers started after the NGISA appear; the in-process reviewer never does |
+| no `workers` line in the NGISA status line | `which ngisa-statusline` must print a path, and the NGISA must be started with the new `repo-tab`. Only workers started after the NGISA appear (reviewers too, since they are workers) |
 | worker pane blank or garbled | `agent-view` reads the session transcript under `~/.claude/projects/`, an internal format. Use `AGENT_VIEW=attach` until it is fixed |
 | tweakcc customisations gone | Claude Code auto-updated and the new binary is unpatched. Re-run your tweakcc apply script, restart the NGISA, then `claude daemon stop` between tasks so new workers start from the patched binary. `DISABLE_AUTOUPDATER=1` in your shell profile stops the surprise |
 | implementer says setup or the gate cannot run | `agent-init` guessed the stack wrong, or found none. Edit `tool/setup.sh` and `tool/ci_local.sh` in the lab (and in the real repo) by hand: the repo owns them |

@@ -10,7 +10,9 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    to run `worktree-include` before anything else, so it gets `tool/setup.sh` and `tool/ci_local.sh`.
    More tasks than free slots: keep a queue in your reply, start the next one each time a worker's report arrives.
    You may not edit code yourself (your settings deny the code dirs), even for a one-line fix. Every code change goes to a worker.
-4. When a worker's report arrives, run the `reviewer` subagent (in-process) on its branch.
+4. When a worker's report arrives, start its reviewer in a visible pane to the right of that worker's pane:
+   `agent-wall.sh <task-slug>-review reviewer opus "<branch, base branch, worktree path, the plan task text>"` (round 2: `<task-slug>-review2`).
+   The verdict arrives as a message (APPROVE or BLOCK first): wait for it, do not poll. Reviewers do not count toward the 3 workers.
    BLOCK -> message that worker with the findings (same session, same branch). Max 2 rounds, then ask me.
 5. Only one agent runs integration tests / the emulator at a time.
 6. Merge APPROVED task branches into a local feature branch and run ./tool/ci_local.sh. This is a lab: never push on your own.
