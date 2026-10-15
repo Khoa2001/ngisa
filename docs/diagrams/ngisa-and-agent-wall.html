@@ -1,146 +1,39 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>NGISA and Agent Wall</title>
-<meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
-<style>
-/* Layout: a single reading column; two diagrams carry the page, short captions only. */
-:root{
-  --bg:#f3f5f8; --surface:#ffffff; --lane:#e9edf3; --fg:#18202c; --muted:#5b6678; --line:#8a94a6;
-  --gate:#5b45d6; --agent:#0d8577; --review:#b46d12; --human:#cf3b30; --term:#141a24; --termfg:#d6dde8;
-  --warn:#d9a21b; --ok:#2fa36b;
-  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
-  --body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
-  --mono:"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
-}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#10141b; --surface:#19202b; --lane:#151b25; --fg:#e6ebf2; --muted:#9aa5b6; --line:#6f7a8d;
-  --gate:#9d8cff; --agent:#3cc4b2; --review:#e7a447; --human:#ff6b5f; --term:#0a0d12; --termfg:#d6dde8;
-  --warn:#e7b93e; --ok:#4cc68a; color-scheme:dark }}
-:root[data-theme="dark"]{
-  --bg:#10141b; --surface:#19202b; --lane:#151b25; --fg:#e6ebf2; --muted:#9aa5b6; --line:#6f7a8d;
-  --gate:#9d8cff; --agent:#3cc4b2; --review:#e7a447; --human:#ff6b5f; --term:#0a0d12; --termfg:#d6dde8;
-  --warn:#e7b93e; --ok:#4cc68a; color-scheme:dark }
-body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.55}
-.wrap{max-width:980px;margin:0 auto;padding-block:32px 56px;
-  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));
-  display:flex;flex-direction:column;gap:40px}
-h1,h2{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.15}
-h1{font-size:clamp(28px,5vw,40px)}
-h2{font-size:22px}
-p{margin:0;max-width:65ch}
-.lede{color:var(--muted);margin-top:8px}
-section{display:flex;flex-direction:column;gap:14px}
-code,.mono{font-family:var(--mono);font-size:.86em}
-.key{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:13px;color:var(--muted)}
-.key span{display:inline-flex;align-items:center;gap:6px}
-.sw{width:12px;height:12px;border-radius:3px;border:2px solid currentColor}
+<meta name="description" content="One WezTerm window. Each repo gets a tab with its own NGISA and its agents. You type ideas to the NGISA; every result comes back to it.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="canonical" href="https://khoa2001.github.io/ngisa/diagrams/ngisa-and-agent-wall.html"><link rel="alternate" hreflang="en" href="https://khoa2001.github.io/ngisa/diagrams/ngisa-and-agent-wall.html"><link rel="alternate" hreflang="vi" href="https://khoa2001.github.io/ngisa/diagrams/ngisa-and-agent-wall.vi.html"><link rel="alternate" hreflang="x-default" href="https://khoa2001.github.io/ngisa/diagrams/ngisa-and-agent-wall.html">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="wrap narrow"><header class="top">
+<a class="brand" href="../index.html">NGISA</a>
+<nav aria-label="Main"><a href="../index.html">Home</a><a href="ngisa-and-agent-wall.html" aria-current="page">Diagram</a><a href="https://github.com/Khoa2001/ngisa/blob/main/docs/README.md">Docs</a><a href="https://github.com/Khoa2001/ngisa">GitHub</a></nav>
+<div class="lang"><a href="ngisa-and-agent-wall.vi.html" hreflang="vi">Tiếng Việt</a></div>
+</header></div>
+<div class="wrap narrow"><main id="main">
 
-/* Window mockups */
-.windows{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:16px}
-@media (max-width:760px){.windows{grid-template-columns:minmax(0,1fr)}}
-.win{background:var(--term);color:var(--termfg);border-radius:10px;overflow:hidden;border:1px solid var(--line);display:flex;flex-direction:column;min-width:0}
-.bar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(255,255,255,.06);font-family:var(--mono);font-size:12px}
-.dots{display:flex;gap:5px}.dots i{width:9px;height:9px;border-radius:50%;background:#4a5363;display:block}
-.tag{margin-left:auto;font-family:var(--body);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:99px}
-.tag.a{background:var(--gate);color:#fff}.tag.b{background:var(--agent);color:#fff}
-.chat{padding:14px;font-family:var(--mono);font-size:12.5px;line-height:1.7;display:flex;flex-direction:column;gap:4px;flex:1}
-.you{color:#fff}.you::before{content:"> ";color:#7d8799}
-.cl::before{content:"● ";color:var(--gate)}
-.cl{color:#b9c3d3}
-.hl{color:var(--human)}
-.tabs{display:flex;gap:2px;padding:6px 8px 0;background:rgba(255,255,255,.04);font-family:var(--mono);font-size:12px;overflow-x:auto}
-.tabs span{padding:5px 12px;border-radius:6px 6px 0 0;color:#8892a3;white-space:nowrap}
-.tabs .on{background:var(--term);color:#fff}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:2px;background:#2a3140;flex:1}
-.pane{background:var(--term);padding:10px 12px;font-family:var(--mono);font-size:12px;display:flex;flex-direction:column;gap:6px;min-width:0}
-.pane b{color:#fff;font-weight:600;overflow-wrap:anywhere}
-.pane small{color:#7d8799;overflow-wrap:anywhere}
-.st{align-self:flex-start;font-family:var(--body);font-size:11px;font-weight:600;padding:1px 8px;border-radius:99px;color:#10141b}
-.st.w{background:var(--agent);color:#fff}.st.n{background:var(--warn)}.st.d{background:var(--ok)}
-.repo{display:grid;grid-template-columns:minmax(0,45fr) minmax(0,55fr);gap:2px;background:#2a3140}
-@media (max-width:640px){.repo{grid-template-columns:minmax(0,1fr)}}
-.gatepane{background:var(--term)}
-.who{font-family:var(--body);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--gate);margin-bottom:4px}
-.stack{display:grid;grid-template-rows:repeat(3,1fr);gap:2px}
-.cards3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
-.cards3 div{background:var(--surface);border-radius:10px;padding:12px 14px;border:1px solid color-mix(in srgb,var(--line) 40%,transparent);font-size:13.5px;display:flex;flex-direction:column;gap:4px}
-.cards3 b{font-weight:600}.cards3 span{color:var(--muted)}
+<header>
+<h1 style="font-size:clamp(34px,5vw,52px)">NGISA and Agent Wall</h1>
+<p style="margin-top:12px;color:var(--muted);font-size:18px">One WezTerm window. Each repo gets a tab with its own NGISA and its agents. You type ideas to the NGISA; every result comes back to it.</p>
+</header>
 
-/* Flow */
-.fig{background:var(--surface);border:1px solid color-mix(in srgb,var(--line) 40%,transparent);border-radius:12px;padding:12px;overflow-x:auto}
-.fig svg{display:block;width:100%;min-width:640px;height:auto}
-svg text{font-family:var(--body);fill:var(--fg)}
-svg .h{font-family:var(--display);font-weight:700;font-size:15px;fill:var(--muted)}
-svg .t{font-size:14px;font-weight:600}
-svg .s{font-size:12px;fill:var(--muted)}
-svg .lab{font-size:12px;fill:var(--muted);font-style:italic}
-svg .lane{fill:var(--lane)}
-svg .box{fill:var(--surface);stroke-width:2}
-svg .g{stroke:var(--gate)} svg .ag{stroke:var(--agent)} svg .rv{stroke:var(--review)} svg .hu{stroke:var(--human)} svg .ci{stroke:var(--line)}
-svg .hufill{fill:color-mix(in srgb,var(--human) 10%,var(--surface))}
-svg .arr{fill:none;stroke:var(--line);stroke-width:1.6}
-svg .dash{stroke-dasharray:5 4}
-svg .ah{fill:var(--line)}
+<section aria-labelledby="w"><h2 id="w">One window, one tab per repo</h2>
+<div class="win" role="img" aria-label="One WezTerm window. Tabs: shelfie, atlas-api, pixel-docs. The shelfie tab shows the NGISA on the left and three agent panes stacked on the right." style="margin-bottom:22px">
+<div class="bar"><span class="dots"><i></i><i></i><i></i></span>WezTerm<span class="tag">1 window</span></div>
+<div class="tabs"><span class=on>shelfie</span><span>atlas-api</span><span>pixel-docs</span></div>
+<div class="repo"><div class="chat"><div class="who">ngisa-shelfie · Opus</div><div class="you">add offline mode to shelfie</div><div class="cl">Spec drafted. <span class="hl">Approve?</span></div><div class="you">yes</div><div class="cl">Plan: 3 tasks (cache, sync, ui). <span class="hl">Approve?</span></div><div class="you">go</div><div class="cl">Spawned cache, sync, ui</div><div class="cl">cache APPROVE · sync BLOCK (round 1)</div><div class="cl">Draft PR #42 open. CI green. <span class="hl">Your merge.</span></div></div><div class="stack"><div class="pane"><b>shelfie-cache</b><small>claude attach shelfie-cache</small><span class="st d">Done</span></div><div class="pane"><b>shelfie-sync</b><small>fixing reviewer findings</small><span class="st w">Working</span></div><div class="pane"><b>shelfie-ui</b><small>permission prompt</small><span class="st n">Needs you</span></div></div></div>
+</div>
+<ul class="rules"><li><b>Tab per repo</b><span>NGISA on the left (you type here), up to 3 agents stacked on the right. Open one with <code>repo-tab ~/lab/shelfie</code>.</span></li><li><b>Seeing every agent</b><span>Optional: run <code>claude agents</code> in any spare tab for every agent in every repo. Ctrl+S groups by repo.</span></li><li><b>Why not one global NGISA</b><span>It would plan without the repo's CLAUDE.md, mix every repo into one context, and one stuck prompt would stall all repos.</span></li></ul></section>
 
-.floor{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
-.floor div{border:2px solid var(--human);border-radius:10px;padding:10px 12px;background:color-mix(in srgb,var(--human) 7%,var(--surface));font-size:14px}
-.floor b{display:block;font-weight:600}
-.floor span{color:var(--muted);font-size:13px}
-.limits{display:flex;flex-wrap:wrap;gap:10px}
-.limits div{flex:1 1 180px;background:var(--surface);border-radius:10px;padding:12px 14px;border:1px solid color-mix(in srgb,var(--line) 40%,transparent)}
-.limits b{font-family:var(--display);font-size:24px;display:block;font-variant-numeric:tabular-nums}
-.limits span{font-size:13px;color:var(--muted)}
-.foot{font-size:13px;color:var(--muted)}
-</style>
-
-<div class="wrap">
-  <header>
-    <h1>NGISA and Agent Wall</h1>
-    <p class="lede">One WezTerm window. Each repo gets a tab with its own NGISA and its agents. You type ideas to the NGISA; every result comes back to it.</p>
-  </header>
-
-  <section>
-    <h2>One window, one tab per repo</h2>
-    <div class="win" role="img" aria-label="One WezTerm window. Tabs: scanner, owen-host-app, work-app. The scanner tab shows the NGISA on the left and three agent panes stacked on the right.">
-      <div class="bar"><span class="dots"><i></i><i></i><i></i></span>WezTerm<span class="tag a">1 window</span></div>
-      <div class="tabs"><span class="on">scanner</span><span>owen-host-app</span><span>work-app</span></div>
-      <div class="repo">
-        <div class="chat gatepane">
-          <div class="who">ngisa-scanner · Opus</div>
-          <div class="you">add offline mode to the scanner</div>
-          <div class="cl">Spec drafted. <span class="hl">Approve?</span></div>
-          <div class="you">yes</div>
-          <div class="cl">Plan: 3 tasks (cache, sync, ui). <span class="hl">Approve?</span></div>
-          <div class="you">go</div>
-          <div class="cl">Spawned cache, sync, ui</div>
-          <div class="cl">cache APPROVE · sync BLOCK (round 1)</div>
-          <div class="cl">Draft PR #42 open. CI green. <span class="hl">Your merge.</span></div>
-        </div>
-        <div class="stack">
-          <div class="pane"><b>scanner-cache</b><small>claude attach scanner-cache</small><span class="st d">Done</span></div>
-          <div class="pane"><b>scanner-sync</b><small>fixing reviewer findings</small><span class="st w">Working</span></div>
-          <div class="pane"><b>scanner-ui</b><small>permission prompt</small><span class="st n">Needs you</span></div>
-        </div>
-      </div>
-    </div>
-    <div class="cards3">
-      <div><b>Tab per repo</b><span>NGISA on the left (you type here), up to 3 agents stacked on the right. Open one with <span class="mono">repo-tab ~/code/scanner</span>.</span></div>
-      <div><b>Seeing every agent</b><span>Optional: run <span class="mono">claude agents</span> in any spare tab for every agent in every repo. Ctrl+S groups by repo.</span></div>
-      <div><b>Why not one global NGISA</b><span>It would plan without the repo's CLAUDE.md, mix every repo into one context, and one stuck prompt would stall all repos.</span></div>
-    </div>
-  </section>
-
-  <section>
-    <h2>From idea to merge</h2>
-    <div class="key">
-      <span style="color:var(--gate)"><i class="sw"></i>NGISA · Opus</span>
-      <span style="color:var(--agent)"><i class="sw"></i>Implementer · Sonnet, own worktree</span>
-      <span style="color:var(--review)"><i class="sw"></i>Reviewer · Opus</span>
-      <span style="color:var(--human)"><i class="sw"></i>You decide</span>
-    </div>
-    <div class="fig">
-      <svg viewBox="0 0 720 820" role="img" aria-label="Flow: your idea, spec and plan approved by you, NGISA spawns up to three implementers in worktrees, each reports to the reviewer, blocked work goes back to the same agent, approved work is merged to a feature branch and draft PR, CI runs, you merge to main.">
+<section aria-labelledby="f"><h2 id="f">From idea to merge</h2>
+<div class="key"><span style="color:var(--gate)"><i class="sw"></i>NGISA · Opus</span><span style="color:var(--agent)"><i class="sw"></i>Implementer · Sonnet, own worktree</span><span style="color:var(--review)"><i class="sw"></i>Reviewer · Opus</span><span style="color:var(--human)"><i class="sw"></i>You decide</span></div>
+<div class="fig"><svg viewBox="0 0 720 820" role="img" aria-label="Flow: your idea, spec and plan approved by you, NGISA spawns up to three implementers in worktrees, each reports to the reviewer, blocked work goes back to the same agent, approved work is merged to a feature branch and draft PR, CI runs, you merge to main.">
         <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker></defs>
         <rect class="lane" x="10" y="36" width="170" height="776" rx="10"/>
         <rect class="lane" x="200" y="36" width="245" height="776" rx="10"/>
@@ -150,24 +43,24 @@ svg .ah{fill:var(--line)}
         <text class="h" x="586" y="24" text-anchor="middle">Repo tab · agent panes</text>
 
         <!-- row 1 -->
-        <rect class="box hu hufill" x="25" y="60" width="140" height="48" rx="8"/>
-        <text class="t" x="95" y="89" text-anchor="middle">Your idea</text>
+        <rect class="box hu hufill" x="16" y="60" width="149" height="48" rx="8"/>
+        <text class="t" x="90.5" y="89" text-anchor="middle">Your idea</text>
         <rect class="box g" x="215" y="60" width="215" height="48" rx="8"/>
         <text class="t" x="322" y="89" text-anchor="middle">Brainstorm</text>
         <path class="arr" d="M165 84H213" marker-end="url(#ah)"/>
         <!-- row 2 -->
         <rect class="box g" x="215" y="140" width="215" height="48" rx="8"/>
         <text class="t" x="322" y="169" text-anchor="middle">Spec</text>
-        <rect class="box hu hufill" x="25" y="140" width="140" height="48" rx="8"/>
-        <text class="t" x="95" y="169" text-anchor="middle">Approve spec</text>
+        <rect class="box hu hufill" x="16" y="140" width="149" height="48" rx="8"/>
+        <text class="t" x="90.5" y="169" text-anchor="middle">Approve spec</text>
         <path class="arr" d="M322 108V138" marker-end="url(#ah)"/>
         <path class="arr" d="M213 164H167" marker-start="url(#ah)" marker-end="url(#ah)"/>
         <!-- row 3 -->
         <rect class="box g" x="215" y="220" width="215" height="52" rx="8"/>
         <text class="t" x="322" y="242" text-anchor="middle">Plan + task split</text>
         <text class="s" x="322" y="261" text-anchor="middle">files each task may touch</text>
-        <rect class="box hu hufill" x="25" y="222" width="140" height="48" rx="8"/>
-        <text class="t" x="95" y="251" text-anchor="middle">Approve plan</text>
+        <rect class="box hu hufill" x="16" y="222" width="149" height="48" rx="8"/>
+        <text class="t" x="90.5" y="251" text-anchor="middle">Approve plan</text>
         <path class="arr" d="M322 188V218" marker-end="url(#ah)"/>
         <path class="arr" d="M213 246H167" marker-start="url(#ah)" marker-end="url(#ah)"/>
         <!-- row 4 spawn -->
@@ -182,17 +75,17 @@ svg .ah{fill:var(--line)}
         <path class="arr" d="M448 424H475" marker-end="url(#ah)"/>
         <!-- agents -->
         <rect class="box ag" x="477" y="280" width="218" height="48" rx="8"/>
-        <text class="t" x="586" y="300" text-anchor="middle">ocr-cache</text>
+        <text class="t" x="586" y="300" text-anchor="middle">shelfie-cache</text>
         <text class="s" x="586" y="317" text-anchor="middle">worktree · TDD · tests green</text>
         <rect class="box ag" x="477" y="340" width="218" height="48" rx="8"/>
-        <text class="t" x="586" y="360" text-anchor="middle">ocr-sync</text>
+        <text class="t" x="586" y="360" text-anchor="middle">shelfie-sync</text>
         <text class="s" x="586" y="377" text-anchor="middle">worktree · TDD · tests green</text>
         <rect class="box ag" x="477" y="400" width="218" height="48" rx="8"/>
-        <text class="t" x="586" y="420" text-anchor="middle">ocr-ui</text>
+        <text class="t" x="586" y="420" text-anchor="middle">shelfie-ui</text>
         <text class="s" x="586" y="437" text-anchor="middle">worktree · TDD · tests green</text>
         <!-- report -->
         <path class="arr" d="M586 448V504H432" marker-end="url(#ah)"/>
-        <text class="lab" x="598" y="482">report → @NGISA</text>
+        <text class="lab" x="596" y="482">report → @NGISA</text>
         <!-- reviewer -->
         <rect class="box rv" x="215" y="480" width="215" height="52" rx="8"/>
         <text class="t" x="322" y="502" text-anchor="middle">Reviewer</text>
@@ -200,9 +93,9 @@ svg .ah{fill:var(--line)}
         <path class="arr dash" d="M405 480V376H475" marker-end="url(#ah)"/>
         <text class="lab" x="300" y="424" text-anchor="middle">BLOCK: same agent fixes</text>
         <text class="lab" x="300" y="441" text-anchor="middle">max 2 rounds</text>
-        <rect class="box hu hufill" x="25" y="482" width="140" height="48" rx="8"/>
-        <text class="t" x="95" y="504" text-anchor="middle">Break the tie</text>
-        <text class="s" x="95" y="521" text-anchor="middle">after 2 BLOCKs</text>
+        <rect class="box hu hufill" x="16" y="482" width="149" height="48" rx="8"/>
+        <text class="t" x="90.5" y="504" text-anchor="middle">Break the tie</text>
+        <text class="s" x="90.5" y="521" text-anchor="middle">after 2 BLOCKs</text>
         <path class="arr dash" d="M215 506H167" marker-end="url(#ah)"/>
         <!-- merge -->
         <path class="arr" d="M322 532V578" marker-end="url(#ah)"/>
@@ -215,35 +108,21 @@ svg .ah{fill:var(--line)}
         <text class="t" x="586" y="682" text-anchor="middle">CI + Claude review</text>
         <text class="s" x="586" y="701" text-anchor="middle">on GitHub / GitLab</text>
         <path class="arr" d="M586 712V764H167" marker-end="url(#ah)"/>
-        <rect class="box hu hufill" x="25" y="740" width="140" height="52" rx="8"/>
-        <text class="t" x="95" y="762" text-anchor="middle">Merge to main</text>
-        <text class="s" x="95" y="781" text-anchor="middle">only you, hook-enforced</text>
-      </svg>
-    </div>
-  </section>
+        <rect class="box hu hufill" x="16" y="740" width="149" height="52" rx="8"/>
+        <text class="t" x="90.5" y="762" text-anchor="middle">Merge to main</text>
+        <text class="s" x="90.5" y="781" text-anchor="middle">only you, hook-enforced</text>
+      </svg></div>
+<ol class="fig-steps"><li data-o="human"><div><b>Your idea</b><span>You type a task to the NGISA.</span></div></li><li data-o="gate"><div><b>Brainstorm and spec</b><span>You approve the spec.</span></div></li><li data-o="gate"><div><b>Plan and task split</b><span>Files each task may touch. You approve the plan.</span></div></li><li data-o="gate"><div><b>agent-wall.sh</b><span>Spawns up to 3 workers and opens their panes.</span></div></li><li data-o="agent"><div><b>Implementers</b><span>shelfie-cache, shelfie-sync, shelfie-ui: own worktree, TDD, tests green. Each reports to @NGISA.</span></div></li><li data-o="review"><div><b>Reviewer</b><span>APPROVE or BLOCK. BLOCK goes back to the same agent, 2 rounds max. After 2 BLOCKs you break the tie.</span></div></li><li data-o="gate"><div><b>Feature branch</b><span><code>ci_local.sh</code> and a draft PR.</span></div></li><li data-o="agent"><div><b>CI + Claude review</b><span>On GitHub / GitLab.</span></div></li><li data-o="human"><div><b>Merge to main</b><span>Only you, hook-enforced.</span></div></li></ol></section>
 
-  <section>
-    <h2>What only you do</h2>
-    <div class="floor">
-      <div><b>Spec</b><span>What you actually want</span></div>
-      <div><b>Plan and task split</b><span>A bad split means merge conflicts in every agent</span></div>
-      <div><b>Reviewer deadlock</b><span>After 2 BLOCK rounds</span></div>
-      <div><b>Merge, release, publish</b><span>Blocked by a hook for agents</span></div>
-      <div><b>Card / PII handling</b><span>Read it yourself, every time</span></div>
-      <div><b>Device feel</b><span>Camera and scan UX, once per feature</span></div>
-    </div>
-  </section>
+<section aria-labelledby="o"><h2 id="o">What only you do</h2>
+<ul class="rules human"><li><b>Spec</b><span>What you actually want</span></li><li><b>Plan and task split</b><span>A bad split means merge conflicts in every agent</span></li><li><b>Reviewer deadlock</b><span>After 2 BLOCK rounds</span></li><li><b>Merge, release, publish</b><span>Blocked by a hook for agents</span></li><li><b>Card / PII handling</b><span>Read it yourself, every time</span></li><li><b>Device feel</b><span>Camera and scan UX, once per feature</span></li></ul></section>
 
-  <section>
-    <h2>Max plan limits</h2>
-    <div class="limits">
-      <div><b>3 / 4–5</b><span>agents per repo tab / running in total across all repos</span></div>
-      <div><b>~N×</b><span>quota burn with N agents, same 5-hour and weekly pool</span></div>
-      <div><b>Sonnet</b><span>for implementers. Opus only for the NGISA and the reviewer</span></div>
-    </div>
-  </section>
+<section aria-labelledby="l"><h2 id="l">Max plan limits</h2>
+<ul class="rules"><li><b>3 per tab, 4 to 5 in total</b><span>agents per repo tab, and running at once across all repos.</span></li><li><b>About N times the burn</b><span>with N agents. They share the same 5-hour and weekly quota.</span></li><li><b>Sonnet for implementers</b><span>Opus only for the NGISA and the reviewer.</span></li></ul></section>
 
-  <p class="foot">Full setup, with the agent files, the agent-wall.sh script and the hook rules, is in <span class="mono">orchestration/one-terminal-orchestrator.md</span> in the project files.</p>
-</div>
+<p class="note">Full setup, with the agent files, the agent-wall.sh script and the hook rules, is in <a href="https://github.com/Khoa2001/ngisa/blob/main/docs/orchestration/one-terminal-orchestrator.md">one-terminal-orchestrator.md</a>.</p>
 
-</body></html>
+</main></div>
+<div class="wrap narrow"><footer class="foot"><p>Experimental. Every run is logged under <code>docs/runs/</code> as research data.</p><p><a href="https://github.com/Khoa2001/ngisa">GitHub</a></p></footer></div>
+</body>
+</html>

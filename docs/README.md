@@ -14,9 +14,10 @@ Docs from the "hand-off" project: can an agent system ship production software f
 
 ## diagrams/
 - `ngisa-and-agent-wall.html` (+ `.vi.html`): one-page diagram of the window layout and the idea-to-merge flow. GitHub shows HTML as source, so view it at https://khoa2001.github.io/ngisa/diagrams/ngisa-and-agent-wall.html (GitHub Pages, served from `main` `/docs`; `.nojekyll` keeps the Markdown files raw) or open the file in a browser.
-- `ngisa-demo.html`: source of the README GIF. Open with `?step=N&lang=en|vi` for one frame. `render-demo-gif.sh` renders it to `assets/ngisa-demo.gif` and `assets/ngisa-demo.vi.gif` (needs Chrome and `ffmpeg`).
+- `ngisa-demo.html`: source of the README GIF and the live demo on `index.html` (`?embed=1`, pausable by postMessage). Open with `?step=N&lang=en|vi` for one frame. `render-demo-gif.sh` renders it to `assets/ngisa-demo.gif` and `assets/ngisa-demo.vi.gif` (needs Chrome and `ffmpeg`).
 
 ## assets/
+- `site.css`: shared look (tokens, type, header, ruled lists, terminal blocks) for `index.html` and the diagram pages. Dark base, light follows the system.
 - `ngisa-demo.gif` (+ `.vi.gif`): the illustrative mock-up animation shown in the root `README.md` / `README.vi.md`. Not a recording.
 - `gate-run-busy-bees.png`: screenshot of a real run (taken before the rename, so the session still reads `gate-busy-bees`) on `~/lab/busy-bees` with two Sonnet workers.
 
