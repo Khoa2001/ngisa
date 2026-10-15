@@ -84,6 +84,8 @@ Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, q
   pleasantries, hedging; fragments OK; abbreviate (DB, auth, config, req, res, fn); arrows for causality. Paths, branches, commands,
   session ids, quoted errors: exact. Code, commits, PR text, security warnings: normal.
   Not: "I have started the implementer worker. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Reviewer next."
+  Long text too (reviewer verdicts, findings, decisions): numbered fragments, never prose paragraphs.
+  Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."
 Never: merge to main, push or open a PR without my ask, publish, touch store/remote-config/signing,
   delete branches with unmerged work.
 EOF
@@ -355,7 +357,7 @@ kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/ngisa}
 # the repo's own deny list (agent-init writes it from the detected stack); else the kit's Flutter default
 cfg="$dir/.claude/ngisa-settings.json"; [[ -f $cfg ]] || cfg="$kit/ngisa-settings.json"
 # the caveman rule also goes in the system prompt, where Opus weighs it more than a hook reminder
-style='Caveman ultra applies to EVERY message you write to the user: status updates, spawn notices, summaries, questions, report tables. Drop articles (a/an/the), filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality. Paths, branch names, commands, session ids, quoted errors: exact. Code, commits, PR text, security warnings, irreversible-action confirmations: normal prose. Not: "I have started the implementer worker on this fix. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Reviewer next."'
+style='Caveman ultra applies to EVERY message you write to the user: status updates, spawn notices, summaries, questions, report tables. Drop articles (a/an/the), filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality. Paths, branch names, commands, session ids, quoted errors: exact. Code, commits, PR text, security warnings, irreversible-action confirmations: normal prose. Not: "I have started the implementer worker on this fix. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Reviewer next." Long text too (reviewer verdicts, findings, decisions): numbered fragments, never prose paragraphs. Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."'
 # status line: the user's own line, then a roster of this repo's workers (ngisa-statusline). Merged into a temp copy of the settings.
 sl=$(command -v ngisa-statusline || true)
 if [[ -n $sl ]] && jq -e . "$cfg" >/dev/null 2>&1; then
@@ -514,7 +516,27 @@ GIT_LOOK = {"status", "branch", "log", "diff", "rev-parse", "show", "rev-list", 
 
 
 def segments(cmd):
-    return [s.strip() for s in re.split(r"\s*(?:&&|\|\||;|\||\n)\s*", cmd) if s.strip()]
+    """Split a shell command on && || ; | and newlines, but not inside quotes."""
+    out, buf, quote, i = [], [], None, 0
+    while i < len(cmd):
+        ch = cmd[i]
+        if quote:
+            buf.append(ch)
+            if ch == "\\" and quote == '"' and i + 1 < len(cmd):
+                buf.append(cmd[i + 1]); i += 1
+            elif ch == quote:
+                quote = None
+        elif ch in "'\"":
+            quote = ch; buf.append(ch)
+        elif ch in ";\n|" or cmd.startswith("&&", i):
+            out.append("".join(buf)); buf = []
+            if cmd.startswith(("&&", "||"), i):
+                i += 1
+        else:
+            buf.append(ch)
+        i += 1
+    out.append("".join(buf))
+    return [x.strip() for x in out if x.strip()]
 
 
 def only_looks(cmd):
@@ -611,7 +633,9 @@ def classify(name, inp, wt):
             return "code", "code", "editing files with a shell command", "edited files with a shell command"
         w = " ".join(first.split()[:4])
         if not re.match(r"[\w./-]+( |$)", w):
-            return None, "run", "running a shell command", "ran a shell command"
+            tool = re.search(r"[A-Za-z][\w.-]*", first)
+            hint = f" ({tool.group(0)})" if tool else ""
+            return None, "run", "running a shell command" + hint, "ran a shell command" + hint
         return None, "run", "running " + w, "ran " + w
     nice = {"Monitor": ("waiting on a background command", "waited on a background command"),
             "TaskStop": ("stopping a task", "stopped a task"),
@@ -674,6 +698,7 @@ def parse(path):
             for b in content:
                 if b.get("type") == "tool_result" and b.get("tool_use_id") in calls:
                     calls[b["tool_use_id"]]["result"] = b
+                    calls[b["tool_use_id"]]["rts"] = ts
     return events, cwd, model, last_ts, last_text
 
 
@@ -761,7 +786,9 @@ def draw(name):
 
     # classify every event once
     log, hit, cur, gate, gate_text, report, report_why, pending = [], set(), None, None, "", None, "", None
+    last_activity = None
     for ev in events:
+        last_activity = max([t for t in (last_activity, ev.get("ts"), ev.get("rts")) if t], default=None)
         if ev["kind"] == "say":
             log.append({"ts": ev["ts"], "kind": "say", "did": ev["text"].splitlines()[0]})
             continue
@@ -877,7 +904,8 @@ def draw(name):
         if pending:
             lines.append(dim("now  ") + clip(pending["doing"], w - 5))
         else:
-            lines.append(dim("now  ") + "thinking")
+            idle = time.time() - last_activity if last_activity else 0
+            lines.append(dim("now  ") + "thinking" + (dim(f" {fmt_dur(idle)}") if idle >= 20 else ""))
         lines.append("")
 
     # history: newest first, plumbing folded, repeats counted
@@ -1041,9 +1069,9 @@ set -euo pipefail
 ev=$(jq -r '.hook_event_name // "SessionStart"' 2>/dev/null || true)
 [[ -n $ev ]] || ev=SessionStart
 if [[ $ev == UserPromptSubmit ]]; then
-  msg='CAVEMAN ULTRA REMINDER. Caveman ultra applies to EVERY message you write to me: status updates, spawn notices, summaries, questions, report tables. Drop articles (a/an/the), filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality (X -> Y). Paths, branch names, commands, session ids, quoted errors: exact. Code, commits, PR titles and bodies, security warnings, irreversible-action confirmations: normal prose. Not: "I'\''ve started the implementer worker on this fix. Nothing is fixed yet, it is still running." Yes: "Implementer spawned (c0be2fe3, fix/moment-edit-save-during-load). Running. Reviewer next."  Worker final reports stay in caveman ultra but keep branch name, files changed, test command + result, and unverified items exact.'
+  msg='CAVEMAN ULTRA REMINDER. Caveman ultra applies to EVERY message you write to me: status updates, spawn notices, summaries, questions, report tables. Drop articles (a/an/the), filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality (X -> Y). Paths, branch names, commands, session ids, quoted errors: exact. Code, commits, PR titles and bodies, security warnings, irreversible-action confirmations: normal prose. Not: "I'\''ve started the implementer worker on this fix. Nothing is fixed yet, it is still running." Yes: "Implementer spawned (c0be2fe3, fix/moment-edit-save-during-load). Running. Reviewer next." Long text too (reviewer verdicts, findings, decisions): numbered fragments, never prose paragraphs. Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."  Worker final reports stay in caveman ultra but keep branch name, files changed, test command + result, and unverified items exact.'
 else
-  msg='CAVEMAN ULTRA active every response until the user says "stop caveman" or "normal mode". Caveman ultra applies to EVERY message you write to me: status updates, spawn notices, summaries, questions, report tables. Drop articles (a/an/the), filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality (X -> Y). Paths, branch names, commands, session ids, quoted errors: exact. Code, commits, PR titles and bodies, security warnings, irreversible-action confirmations: normal prose. Not: "I'\''ve started the implementer worker on this fix. Nothing is fixed yet, it is still running." Yes: "Implementer spawned (c0be2fe3, fix/moment-edit-save-during-load). Running. Reviewer next."  Worker final reports stay in caveman ultra but keep branch name, files changed, test command + result, and unverified items exact.'
+  msg='CAVEMAN ULTRA active every response until the user says "stop caveman" or "normal mode". Caveman ultra applies to EVERY message you write to me: status updates, spawn notices, summaries, questions, report tables. Drop articles (a/an/the), filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality (X -> Y). Paths, branch names, commands, session ids, quoted errors: exact. Code, commits, PR titles and bodies, security warnings, irreversible-action confirmations: normal prose. Not: "I'\''ve started the implementer worker on this fix. Nothing is fixed yet, it is still running." Yes: "Implementer spawned (c0be2fe3, fix/moment-edit-save-during-load). Running. Reviewer next." Long text too (reviewer verdicts, findings, decisions): numbered fragments, never prose paragraphs. Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."  Worker final reports stay in caveman ultra but keep branch name, files changed, test command + result, and unverified items exact.'
 fi
 jq -n --arg ev "$ev" --arg m "$msg" '{hookSpecificOutput: {hookEventName: $ev, additionalContext: $m}}'
 EOF

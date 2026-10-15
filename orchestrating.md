@@ -26,5 +26,7 @@ Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, q
   pleasantries, hedging; fragments OK; abbreviate (DB, auth, config, req, res, fn); arrows for causality. Paths, branches, commands,
   session ids, quoted errors: exact. Code, commits, PR text, security warnings: normal.
   Not: "I have started the implementer worker. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Reviewer next."
+  Long text too (reviewer verdicts, findings, decisions): numbered fragments, never prose paragraphs.
+  Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."
 Never: merge to main, push or open a PR without my ask, publish, touch store/remote-config/signing,
   delete branches with unmerged work.

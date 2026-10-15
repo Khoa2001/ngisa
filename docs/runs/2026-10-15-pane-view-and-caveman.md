@@ -57,3 +57,17 @@ From a busy-bees screenshot: worker panes showed an input box, the NGISA answere
 
 ### Not tested
 - Colours and symbols in a real WezTerm pane over a whole task, and whether the report reaches the NGISA with the NGISA open first.
+
+## Follow-up: first live run of the clean pane (2026-10-15)
+- Two parallel busy-bees test tasks (`health-date-utils`, `health-age`): both panes showed their own branch and worktree, the roster showed both workers, and the finished worker's pane read `done be2bf61 ... report delivered`, so a report reached the NGISA with the NGISA opened first. Counters matched git (`1 file · +69 -0`).
+- The date-utils pane looked stuck at `setup` for 3 min. The transcript showed one long model thinking step with no tool call, so `thinking` was true but gave no sign of time passing. Now `now  thinking 2m 40s` (shown from 20 s, time since the last tool call or result).
+- A compound shell command fell back to `ran a shell command`. The command splitter did not respect quotes (a `\|` inside a grep pattern split the command), so look-around commands were not recognised. It is now quote-aware, and the fallback names the tool: `ran a shell command (python3)`.
+- Caveman slipped again in the NGISA: the user had to ask "have caveman ultra applied on this session yet?" and it admitted earlier messages were full prose. The slips were long reviewer summaries and decision requests. The rule now also names long text (verdicts, findings, decisions: numbered fragments, never prose paragraphs, with a before/after example) in `orchestrating.md`, the `repo-tab` system prompt, both hook messages and the docs.
+- Still open: the NGISA asked whether the health-age worker should also test the "birthday not yet reached this month" branch (`dart:45-47`), and `test/teacher-link` still has 15 unrelated red tests to plan. Both are the user's to answer.
+
+### Checked
+- Replay on three finished workers: no regressions; `checked repo state` now folds the grep/sed one-liners that used to show as `ran a shell command`.
+- `bash -n` on `repo-tab` and `caveman-ultra-hook`; the hook output ends with the long-text rule. Quickstart script blocks equal `~/bin`. The lab's `CLAUDE.local.md` was refreshed from `orchestrating.md`.
+
+### Not tested
+- The `thinking 2m 40s` counter on a live worker; whether the longer caveman rule holds on a full task (needs a fresh `repo-tab` so the new system prompt applies).
