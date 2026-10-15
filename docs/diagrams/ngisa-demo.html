@@ -58,6 +58,12 @@ html.emb .pane{font-size:12.5px}
   html.emb .stack{grid-template-rows:repeat(3,minmax(84px,auto))}
   html.emb .cap{font-size:15px}
 }
+
+.cur{display:inline-block;width:.55em;height:1.05em;background:var(--termfg);vertical-align:-.15em;margin-left:2px}
+.ngisa .cl .hl{text-shadow:0 0 calc(var(--pulse,0) * 12px) var(--human)}
+.cap .ct{display:inline-block}
+.cap .prog{position:absolute;left:0;bottom:0;height:2px;background:var(--gate);opacity:.8}
+html.emb .cap{position:relative}
 </style>
 </head>
 <body>
@@ -142,75 +148,155 @@ const T = {
 // ms each step stays on screen. Used by the loop and by render-demo-gif.sh.
 const DURATIONS = [1600, 1800, 1300, 2000, 2200, 2200, 2200, 2200, 3600];
 
-function pane(name, role, st, stCls, lines){
-  return `<div class="pane"><div class="ph">${name}<span class="st ${stCls}">${st}</span></div>${lines.map(l=>`<div>${l}</div>`).join("")}</div>`;
+// ---- time-driven engine: draw(t) paints the whole scene at t ms; the loop and the GIF both call it ----
+const STARTS = DURATIONS.reduce((acc, d, i) => (acc.push(i ? acc[i-1] + DURATIONS[i-1] : 0), acc), []);
+const TOTAL = DURATIONS.reduce((a, b) => a + b, 0);
+const clamp01 = x => Math.min(1, Math.max(0, x));
+const ease = x => 1 - Math.pow(1 - clamp01(x), 3);
+const stepAt = t => { let s = 0; for (let i = 0; i < STARTS.length; i++) if (t >= STARTS[i]) s = i; return s; };
+const textLen = html => html.replace(/<[^>]*>/g, "").length;
+
+// keep the first n visible characters of an html string, closing any open tags
+function clip(html, n){
+  let out = "", count = 0, stack = [], i = 0;
+  while(i < html.length){
+    if(html[i] === "<"){
+      const j = html.indexOf(">", i), tag = html.slice(i, j + 1);
+      out += tag;
+      if(tag[1] === "/") stack.pop(); else stack.push(tag.match(/^<(\w+)/)[1]);
+      i = j + 1; continue;
+    }
+    if(count >= n) break;
+    out += html[i]; count++; i++;
+  }
+  while(stack.length) out += `</${stack.pop()}>`;
+  return out;
 }
-const emptyPane = `<div class="pane empty">-</div>`;
 
-function render(step, lang){
-  const t = T[lang];
-  const n = [];
-  if(step>=0) n.push(`<div class="you">${t.task}</div>`);
-  if(step>=1) n.push(`<div class="cl">${t.plan}</div>`);
-  if(step>=2) n.push(`<div class="you">${t.go}</div>`);
-  if(step>=3) n.push(`<div class="cl">${t.spawned}</div>`);
-  if(step>=6) n.push(`<div class="cl">${t.cacheOk}</div><div class="cl">${t.syncBlock}</div>`);
-  if(step>=7) n.push(`<div class="cl">${t.syncOk}</div>`);
-  if(step>=8) n.push(`<div class="cl">${t.done}</div>`);
-  document.getElementById("ngisa").innerHTML = `<div class="who">NGISA - shelfie - Opus</div>` + n.join("");
+// item: {id, at, html, rate} - rate ms per character (typed), 0 = fade and rise in
+function itemState(it, t){
+  if(t < it.at) return null;
+  const len = textLen(it.html);
+  if(it.rate){
+    const n = Math.min(len, Math.floor((t - it.at) / it.rate) + 1);
+    return {html: clip(it.html, n), op: 1, ty: 0, typing: n < len, end: it.at + len * it.rate};
+  }
+  const p = ease((t - it.at) / 240);
+  return {html: it.html, op: p, ty: (1 - p) * 6, typing: false, end: it.at};
+}
 
-  let p1 = emptyPane, p2 = emptyPane, p3 = emptyPane;
-  if(step>=3){
-    p1 = pane("shelfie-cache","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.tests]);
-    p2 = pane("shelfie-sync","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.tests]);
-  }
-  if(step>=4){
-    p1 = pane("shelfie-cache","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.gateRun]);
-    p2 = pane("shelfie-sync","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.gateRun]);
-  }
-  if(step>=5){
-    p1 = pane("shelfie-cache","", t.done_,"d",[t.gateOk]);
-    p2 = pane("shelfie-sync","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.gateRun]);
-    p3 = pane("reviewer","", t.review,"r",[t.reviewing, t.gatefiles]);
-  }
-  if(step>=6){
-    p1 = pane("shelfie-cache","", t.done_,"d",[t.gateOk]);
-    p2 = pane("shelfie-sync","", t.fixing,"n",[`<span class=bad>${t.revSync1}</span>`, t.gateRun]);
-    p3 = pane("reviewer","", t.review,"r",[`<span class=ok>${t.revCache}</span>`, `<span class=bad>${t.revSync1}</span>`]);
-  }
-  if(step>=7){
-    p2 = pane("shelfie-sync","", t.done_,"d",[t.gateOk]);
-    p3 = pane("reviewer","", t.done_,"d",[`<span class=ok>${t.revCache}</span>`, `<span class=ok>${t.revSync2}</span>`]);
-  }
-  document.getElementById("stack").innerHTML = p1+p2+p3;
+function model(lang){
+  const t = T[lang], dim = s => `<span class=dim>${s}</span>`, ok = s => `<span class=ok>${s}</span>`, bad = s => `<span class=bad>${s}</span>`;
+  const ngisa = [
+    {id:"task",  cls:"you", at:250,   rate:38, html:t.task},
+    {id:"plan",  cls:"cl",  at:1750,  rate:16, html:t.plan},
+    {id:"go",    cls:"you", at:3500,  rate:90, html:t.go},
+    {id:"spawn", cls:"cl",  at:4800,  rate:0,  html:t.spawned},
+    {id:"cacheOk",cls:"cl", at:11300, rate:0,  html:t.cacheOk},
+    {id:"block", cls:"cl",  at:11650, rate:16, html:t.syncBlock},
+    {id:"syncOk",cls:"cl",  at:13800, rate:0,  html:t.syncOk},
+    {id:"done",  cls:"cl",  at:15700, rate:14, html:t.done}
+  ];
+  const slot = (id, list) => list.map((e, i) => Object.assign({id: id + i}, e));
+  const panes = [
+    {name:"shelfie-cache", at:4800,
+     status:[{at:4800, txt:t.working, c:"w"}, {at:9300, txt:t.done_, c:"d"}],
+     l1: slot("c1", [{at:4950, rate:0, html:dim(t.wt)}, {at:9300, rate:30, html:t.gateOk}]),
+     l2: slot("c2", [{at:5200, rate:22, html:t.tests}, {at:6900, rate:30, html:t.gateRun}, {at:9300, rate:0, html:""}])},
+    {name:"shelfie-sync", at:4800,
+     status:[{at:4800, txt:t.working, c:"w"}, {at:11500, txt:t.fixing, c:"n"}, {at:13700, txt:t.done_, c:"d"}],
+     l1: slot("s1", [{at:4950, rate:0, html:dim(t.wt)}, {at:11500, rate:18, html:bad(t.revSync1)}, {at:13700, rate:30, html:t.gateOk}]),
+     l2: slot("s2", [{at:5200, rate:22, html:t.tests}, {at:6900, rate:30, html:t.gateRun}, {at:13700, rate:0, html:""}])},
+    {name:"reviewer", at:9100,
+     status:[{at:9100, txt:t.review, c:"r"}, {at:13500, txt:t.done_, c:"d"}],
+     l1: slot("r1", [{at:9300, rate:22, html:t.reviewing}, {at:11300, rate:22, html:ok(t.revCache)}]),
+     l2: slot("r2", [{at:9800, rate:22, html:t.gatefiles}, {at:11700, rate:18, html:bad(t.revSync1)}, {at:13500, rate:22, html:ok(t.revSync2)}])}
+  ];
+  return {ngisa, panes};
+}
+
+const MODELS = {};
+function draw(t, lang){
+  const tt = T[lang], M = MODELS[lang] || (MODELS[lang] = model(lang));
+  const step = stepAt(t);
+  // gentle fade of the whole scene at the end of the loop, so the GIF loops without a jump
+  const scene = 1 - ease((t - (TOTAL - 500)) / 500);
+  document.querySelector(".body").style.opacity = scene;
+
+  // cursor goes to the most recently started typed item, for a moment after it finishes
+  let cur = null, curAt = -1;
+  const typed = [];
+  M.ngisa.forEach(it => typed.push(it));
+  M.panes.forEach(p => [...p.l1, ...p.l2].forEach(it => typed.push(it)));
+  typed.forEach(it => { if(it.rate && t >= it.at && t <= it.at + textLen(it.html) * it.rate + 700 && it.at >= curAt){ cur = it.id; curAt = it.at; } });
+  const blink = Math.floor(t / 420) % 2 === 0;
+  const withCursor = (it, st) => (it.id === cur && (st.typing || blink)) ? st.html + `<span class="cur"></span>` : st.html;
+
+  let n = `<div class="who">NGISA - shelfie - Opus</div>`;
+  M.ngisa.forEach(it => {
+    const st = itemState(it, t);
+    if(!st) return;
+    n += `<div class="${it.cls}" style="opacity:${st.op.toFixed(3)};transform:translateY(${st.ty.toFixed(2)}px)">${withCursor(it, st)}</div>`;
+  });
+  const ngisaEl = document.getElementById("ngisa");
+  const doneIt = M.ngisa[M.ngisa.length - 1];
+  const pulse = t > doneIt.at + textLen(doneIt.html) * doneIt.rate + 100 ? 0.5 + 0.5 * Math.sin((t - doneIt.at) / 260) : 0;
+  ngisaEl.style.setProperty("--pulse", pulse.toFixed(3));
+  ngisaEl.innerHTML = n;
+
+  const pick = (list) => { let best = null; list.forEach(e => { if(t >= e.at) best = e; }); return best; };
+  const line = (list) => {
+    const e = pick(list); if(!e) return "";
+    const st = itemState(e, t);
+    return st.html === "" && !e.rate ? "" : `<div style="opacity:${st.op.toFixed(3)};transform:translateY(${st.ty.toFixed(2)}px)">${withCursor(e, st)}</div>`;
+  };
+  document.getElementById("stack").innerHTML = M.panes.map(p => {
+    if(t < p.at) return `<div class="pane empty">-</div>`;
+    const op = ease((t - p.at) / 260);
+    const s = pick(p.status), sp = ease((t - s.at) / 220);
+    return `<div class="pane" style="opacity:${op.toFixed(3)}"><div class="ph">${p.name}<span class="st ${s.c}" style="opacity:${sp.toFixed(3)};transform:scale(${(0.9 + 0.1 * sp).toFixed(3)})">${s.txt}</span></div>${line(p.l1)}${line(p.l2)}</div>`;
+  }).join("");
 
   const cap = document.getElementById("cap");
-  cap.className = "cap" + (step===8 ? " human" : "");
-  if(q.has("embed")) parent.postMessage({type:"ngisa-demo-step", step}, "*");
-  cap.innerHTML = `<span class="n">${step+1}</span><span>${t.caps[step]}</span><small>${t.note}</small>`;
+  const cp = ease((t - STARTS[step]) / 280);
+  cap.className = "cap" + (step === 8 ? " human" : "");
+  cap.innerHTML = `<span class="n">${step + 1}</span><span class="ct" style="opacity:${cp.toFixed(3)};transform:translateY(${((1 - cp) * 8).toFixed(2)}px)">${tt.caps[step]}</span><small>${tt.note}</small><i class="prog" style="width:${(t / TOTAL * 100).toFixed(2)}%"></i>`;
+  return step;
 }
 
 const q = new URLSearchParams(location.search);
 const lang = q.get("lang") === "vi" ? "vi" : "en";
 document.documentElement.lang = lang;
-if(q.has("embed")){
+const embed = q.has("embed");
+if(embed){
   document.documentElement.classList.add("emb");
   const post = () => parent.postMessage({type:"ngisa-demo-size", h:document.body.getBoundingClientRect().height}, "*");
   new ResizeObserver(post).observe(document.body);
   addEventListener("load", post);
 }
-if(q.has("step")){
-  render(Number(q.get("step")), lang);
+let lastStep = -1;
+function show(t){
+  const s = draw(t, lang);
+  if(embed && s !== lastStep){ lastStep = s; parent.postMessage({type:"ngisa-demo-step", step:s}, "*"); }
+}
+if(q.has("t")){
+  show(Number(q.get("t")));                                   // one frame at t ms (GIF renderer)
+} else if(q.has("step")){
+  const s = Number(q.get("step"));                            // settled end of a step
+  show(Math.min(TOTAL - 1, STARTS[s] + DURATIONS[s] - 1));
 } else {
-  let i = 0, timer = null;
-  let paused = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  function tick(){ render(i, lang); const d = DURATIONS[i]; i = (i+1) % DURATIONS.length; timer = setTimeout(tick, d); }
-  if(paused){ render(DURATIONS.length - 1, lang); } else { tick(); }
+  let offset = 0, startedAt = performance.now(), playing = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const frame = now => {
+    if(playing) show((now - startedAt + offset) % TOTAL);
+    requestAnimationFrame(frame);
+  };
+  if(!playing) show(STARTS[STARTS.length - 1] + 1400);       // reduced motion: settled last frame until "play"
+  requestAnimationFrame(frame);
   addEventListener("message", e => {
     const m = e.data;
     if(!m || m.type !== "ngisa-demo") return;
-    if(m.action === "pause"){ paused = true; clearTimeout(timer); }
-    else if(m.action === "play" && paused){ paused = false; tick(); }
+    if(m.action === "pause" && playing){ offset += performance.now() - startedAt; playing = false; }
+    else if(m.action === "play" && !playing){ startedAt = performance.now(); playing = true; }
   });
 }
 </script>

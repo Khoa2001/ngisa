@@ -1,37 +1,21 @@
 #!/usr/bin/env bash
 # Renders docs/diagrams/ngisa-demo.html into docs/assets/ngisa-demo.gif and ngisa-demo.vi.gif.
-# Needs Google Chrome (headless) and ffmpeg. Run from anywhere.
+# The page paints the scene at any time t, so every frame is one screenshot from a single headless Chrome
+# (render-demo-frames.mjs). Needs Node 22, Google Chrome and ffmpeg. FPS (default 25) and COLORS (default 96) can be overridden.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
 html="$here/ngisa-demo.html"
 out="$here/../assets"
-chrome="${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+fps="${FPS:-25}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# Step durations (ms) live in the HTML so the page and the GIF agree.
-durations=$(grep -o 'DURATIONS = \[[^]]*\]' "$html" | sed 's/.*\[\(.*\)\]/\1/' | tr -d ' ' | tr ',' ' ')
-steps=($durations)
-
 for lang in en vi; do
-  list="$tmp/list-$lang.txt"
-  : > "$list"
-  for i in "${!steps[@]}"; do
-    png="$tmp/$lang-$i.png"
-    "$chrome" --headless=new --hide-scrollbars --disable-gpu \
-      --window-size=960,540 --force-device-scale-factor=1 \
-      --screenshot="$png" "file://$html?step=$i&lang=$lang" >/dev/null 2>&1
-    echo "file '$png'" >> "$list"
-    echo "duration $(awk "BEGIN{print ${steps[$i]}/1000}")" >> "$list"
-  done
-  # concat demuxer ignores the last duration unless the last file is repeated
-  last="$tmp/$lang-$((${#steps[@]} - 1)).png"
-  echo "file '$last'" >> "$list"
-
+  node "$here/render-demo-frames.mjs" "$html" "$lang" "$fps" "$tmp/$lang"
   name="ngisa-demo.gif"; [ "$lang" = vi ] && name="ngisa-demo.vi.gif"
-  ffmpeg -y -loglevel error -f concat -safe 0 -i "$list" \
-    -vf "scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=full[p];[b][p]paletteuse=dither=none" \
+  ffmpeg -y -loglevel error -framerate "$fps" -i "$tmp/$lang/%04d.png" \
+    -vf "scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=${COLORS:-96}:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle" \
     -loop 0 "$out/$name"
-  ls -l "$out/$name"
+  echo "$name $(stat -f %z "$out/$name" 2>/dev/null || stat -c %s "$out/$name") bytes"
 done
