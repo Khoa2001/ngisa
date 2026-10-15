@@ -27,13 +27,13 @@
 <div class="win" role="img" aria-label="Một cửa sổ WezTerm. Các tab: shelfie, atlas-api, pixel-docs. Tab shelfie có NGISA bên trái và ba pane agent xếp chồng bên phải." style="margin-bottom:22px">
 <div class="bar"><span class="dots"><i></i><i></i><i></i></span>WezTerm<span class="tag">1 cửa sổ</span></div>
 <div class="tabs"><span class=on>shelfie</span><span>atlas-api</span><span>pixel-docs</span></div>
-<div class="repo"><div class="chat"><div class="who">ngisa-shelfie · Opus</div><div class="you">thêm chế độ offline cho shelfie</div><div class="cl">Đã viết spec. <span class="hl">Duyệt không?</span></div><div class="you">ok</div><div class="cl">Plan: 3 task (cache, sync, ui). <span class="hl">Duyệt không?</span></div><div class="you">go</div><div class="cl">Đã tạo agent cache, sync, ui</div><div class="cl">cache APPROVE · sync BLOCK (round 1)</div><div class="cl">Draft PR #42 đã mở. CI xanh. <span class="hl">Bạn merge.</span></div></div><div class="stack"><div class="pane"><b>shelfie-cache</b><small>claude attach shelfie-cache</small><span class="st d">Xong</span></div><div class="pane"><b>shelfie-sync</b><small>đang sửa theo reviewer</small><span class="st w">Đang chạy</span></div><div class="pane"><b>shelfie-ui</b><small>đang hỏi quyền</small><span class="st n">Chờ bạn</span></div></div></div>
+<div class="repo"><div class="chat"><div class="who">ngisa-shelfie · Opus</div><div class="you">thêm chế độ offline cho shelfie</div><div class="cl">Đã viết spec. <span class="hl">Duyệt không?</span></div><div class="you">ok</div><div class="cl">Plan: 3 task (cache, sync, ui). <span class="hl">Duyệt không?</span></div><div class="you">go</div><div class="cl">Đã tạo agent cache, sync, ui</div><div class="cl">cache gate-check ok · sync gate-check <span class="hl">FAIL</span></div><div class="cl">Draft PR #42 đã mở. CI xanh. <span class="hl">Bạn merge.</span></div></div><div class="stack"><div class="pane"><b>shelfie-cache</b><small>claude attach shelfie-cache</small><span class="st d">Xong</span></div><div class="pane"><b>shelfie-sync</b><small>gate-check báo lỗi</small><span class="st n">Chờ bạn</span></div><div class="pane"><b>shelfie-ui</b><small>đang hỏi quyền</small><span class="st n">Chờ bạn</span></div></div></div>
 </div>
 <ul class="rules"><li><b>Mỗi repo một tab</b><span>NGISA bên trái (bạn gõ ở đây), tối đa 3 agent bên phải. Mở bằng <code>repo-tab ~/lab/shelfie</code>.</span></li><li><b>Xem hết mọi agent</b><span>Tuỳ chọn: chạy <code>claude agents</code> ở một tab trống để thấy mọi agent của mọi repo. Ctrl+S để gom theo repo.</span></li><li><b>Sao không dùng 1 NGISA chung</b><span>Nó lên plan mà không đọc CLAUDE.md của repo, trộn mọi repo vào một context, và kẹt một chỗ là kẹt hết.</span></li></ul></section>
 
 <section aria-labelledby="f"><h2 id="f">Từ ý tưởng đến merge</h2>
-<div class="key"><span style="color:var(--gate)"><i class="sw"></i>NGISA · Opus</span><span style="color:var(--agent)"><i class="sw"></i>Implementer · Sonnet, worktree riêng</span><span style="color:var(--review)"><i class="sw"></i>Reviewer · Opus</span><span style="color:var(--human)"><i class="sw"></i>Bạn quyết</span></div>
-<div class="fig"><svg viewBox="0 0 720 820" role="img" aria-label="Luồng: ý tưởng của bạn, bạn duyệt spec và plan, NGISA tạo tối đa ba implementer trong worktree, mỗi con báo cáo cho reviewer, việc bị BLOCK quay lại đúng agent đó, việc được APPROVE merge vào feature branch và draft PR, CI chạy, bạn merge vào main.">
+<div class="key"><span style="color:var(--gate)"><i class="sw"></i>NGISA · Opus</span><span style="color:var(--agent)"><i class="sw"></i>Implementer · Sonnet, worktree riêng</span><span style="color:var(--human)"><i class="sw"></i>Bạn quyết</span></div>
+<div class="fig"><svg viewBox="0 0 720 820" role="img" aria-label="Luồng: ý tưởng của bạn, bạn duyệt spec và plan, NGISA tạo tối đa ba implementer trong worktree, mỗi con báo cáo cho NGISA, NGISA chạy gate-check, check lỗi thì dừng chờ bạn, việc sạch được merge vào feature branch và draft PR, CI chạy, bạn merge vào main.">
         <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker></defs>
         <rect class="lane" x="10" y="36" width="170" height="776" rx="10"/>
         <rect class="lane" x="200" y="36" width="245" height="776" rx="10"/>
@@ -86,20 +86,17 @@
         <!-- report -->
         <path class="arr" d="M586 448V504H432" marker-end="url(#ah)"/>
         <text class="lab" x="596" y="482">báo cáo → @NGISA</text>
-        <!-- reviewer -->
-        <rect class="box rv" x="215" y="480" width="215" height="52" rx="8"/>
-        <text class="t" x="322" y="502" text-anchor="middle">Reviewer</text>
-        <text class="s" x="322" y="521" text-anchor="middle">APPROVE hoặc BLOCK</text>
-        <path class="arr dash" d="M405 480V376H475" marker-end="url(#ah)"/>
-        <text class="lab" x="300" y="424" text-anchor="middle">BLOCK: đúng agent đó sửa</text>
-        <text class="lab" x="300" y="441" text-anchor="middle">tối đa 2 vòng</text>
+        <!-- gate-check -->
+        <rect class="box g" x="215" y="480" width="215" height="52" rx="8"/>
+        <text class="t" x="322" y="502" text-anchor="middle">gate-check</text>
+        <text class="s" x="322" y="521" text-anchor="middle">file gate, cấu hình lint</text>
         <rect class="box hu hufill" x="16" y="482" width="149" height="48" rx="8"/>
-        <text class="t" x="90.5" y="504" text-anchor="middle">Phân xử</text>
-        <text class="s" x="90.5" y="521" text-anchor="middle">sau 2 lần BLOCK</text>
+        <text class="t" x="90.5" y="504" text-anchor="middle">Bạn quyết</text>
+        <text class="s" x="90.5" y="521" text-anchor="middle">nếu gate-check lỗi</text>
         <path class="arr dash" d="M215 506H167" marker-end="url(#ah)"/>
         <!-- merge -->
         <path class="arr" d="M322 532V578" marker-end="url(#ah)"/>
-        <text class="lab" x="330" y="560">APPROVE</text>
+        <text class="lab" x="330" y="560">sạch</text>
         <rect class="box g" x="215" y="580" width="215" height="52" rx="8"/>
         <text class="t" x="322" y="602" text-anchor="middle">Feature branch</text>
         <text class="s" x="322" y="621" text-anchor="middle">ci_local.sh · draft PR</text>
@@ -112,13 +109,13 @@
         <text class="t" x="90.5" y="762" text-anchor="middle">Merge vào main</text>
         <text class="s" x="90.5" y="781" text-anchor="middle">chỉ bạn, hook chặn agent</text>
       </svg></div>
-<ol class="fig-steps"><li data-o="human"><div><b>Ý tưởng</b><span>Bạn gõ task cho NGISA.</span></div></li><li data-o="gate"><div><b>Brainstorm và spec</b><span>Bạn duyệt spec.</span></div></li><li data-o="gate"><div><b>Plan và chia task</b><span>File mỗi task được sửa. Bạn duyệt plan.</span></div></li><li data-o="gate"><div><b>agent-wall.sh</b><span>Tạo tối đa 3 agent và mở pane cho chúng.</span></div></li><li data-o="agent"><div><b>Implementer</b><span>shelfie-cache, shelfie-sync, shelfie-ui: worktree riêng, TDD, test xanh. Mỗi con báo cáo cho @NGISA.</span></div></li><li data-o="review"><div><b>Reviewer</b><span>APPROVE hoặc BLOCK. BLOCK quay lại đúng agent đó, tối đa 2 vòng. Sau 2 lần BLOCK bạn phân xử.</span></div></li><li data-o="gate"><div><b>Feature branch</b><span><code>ci_local.sh</code> và draft PR.</span></div></li><li data-o="agent"><div><b>CI + Claude review</b><span>Trên GitHub / GitLab.</span></div></li><li data-o="human"><div><b>Merge vào main</b><span>Chỉ bạn, hook chặn agent.</span></div></li></ol></section>
+<ol class="fig-steps"><li data-o="human"><div><b>Ý tưởng</b><span>Bạn gõ task cho NGISA.</span></div></li><li data-o="gate"><div><b>Brainstorm và spec</b><span>Bạn duyệt spec.</span></div></li><li data-o="gate"><div><b>Plan và chia task</b><span>File mỗi task được sửa. Bạn duyệt plan.</span></div></li><li data-o="gate"><div><b>agent-wall.sh</b><span>Tạo tối đa 3 agent và mở pane cho chúng.</span></div></li><li data-o="agent"><div><b>Implementer</b><span>shelfie-cache, shelfie-sync, shelfie-ui: worktree riêng, TDD, test xanh. Mỗi con báo cáo cho @NGISA.</span></div></li><li data-o="gate"><div><b>gate-check</b><span>Một script so sánh file gate và cấu hình lint. Có khác biệt thì dừng merge và chờ bạn.</span></div></li><li data-o="gate"><div><b>Feature branch</b><span><code>ci_local.sh</code> và draft PR.</span></div></li><li data-o="agent"><div><b>CI + Claude review</b><span>Trên GitHub / GitLab.</span></div></li><li data-o="human"><div><b>Merge vào main</b><span>Chỉ bạn, hook chặn agent.</span></div></li></ol></section>
 
 <section aria-labelledby="o"><h2 id="o">Việc chỉ bạn làm</h2>
-<ul class="rules human"><li><b>Spec</b><span>Bạn thật sự muốn gì</span></li><li><b>Plan và cách chia task</b><span>Chia sai là conflict ở mọi agent</span></li><li><b>Reviewer bế tắc</b><span>Sau 2 vòng BLOCK</span></li><li><b>Merge, release, publish</b><span>Hook chặn agent làm việc này</span></li><li><b>Dữ liệu CCCD / PII</b><span>Tự đọc, lần nào cũng đọc</span></li><li><b>Cảm giác trên máy thật</b><span>Camera, UX quét thẻ, mỗi feature một lần</span></li></ul></section>
+<ul class="rules human"><li><b>Spec</b><span>Bạn thật sự muốn gì</span></li><li><b>Plan và cách chia task</b><span>Chia sai là conflict ở mọi agent</span></li><li><b>Đọc diff</b><span>Bạn là reviewer; không có review agent</span></li><li><b>Merge, release, publish</b><span>Hook chặn agent làm việc này</span></li><li><b>Dữ liệu CCCD / PII</b><span>Tự đọc, lần nào cũng đọc</span></li><li><b>Cảm giác trên máy thật</b><span>Camera, UX quét thẻ, mỗi feature một lần</span></li></ul></section>
 
 <section aria-labelledby="l"><h2 id="l">Giới hạn gói Max</h2>
-<ul class="rules"><li><b>3 mỗi tab, 4 đến 5 tổng</b><span>agent mỗi tab repo, và chạy cùng lúc ở mọi repo.</span></li><li><b>Tốn quota gấp khoảng N lần</b><span>với N agent. Chung quota 5 tiếng và tuần.</span></li><li><b>Sonnet cho implementer</b><span>Opus chỉ cho NGISA và reviewer.</span></li></ul></section>
+<ul class="rules"><li><b>3 mỗi tab, 4 đến 5 tổng</b><span>agent mỗi tab repo, và chạy cùng lúc ở mọi repo.</span></li><li><b>Tốn quota gấp khoảng N lần</b><span>với N agent. Chung quota 5 tiếng và tuần.</span></li><li><b>Sonnet cho implementer</b><span>Opus chỉ cho NGISA.</span></li></ul></section>
 
 <p class="note">Cài đặt đầy đủ (file agent, script agent-wall.sh, luật hook) nằm ở <a href="https://github.com/Khoa2001/ngisa/blob/main/docs/orchestration/one-terminal-orchestrator.vi.md">one-terminal-orchestrator.vi.md</a>.</p>
 

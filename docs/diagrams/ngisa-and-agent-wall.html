@@ -27,13 +27,13 @@
 <div class="win" role="img" aria-label="One WezTerm window. Tabs: shelfie, atlas-api, pixel-docs. The shelfie tab shows the NGISA on the left and three agent panes stacked on the right." style="margin-bottom:22px">
 <div class="bar"><span class="dots"><i></i><i></i><i></i></span>WezTerm<span class="tag">1 window</span></div>
 <div class="tabs"><span class=on>shelfie</span><span>atlas-api</span><span>pixel-docs</span></div>
-<div class="repo"><div class="chat"><div class="who">ngisa-shelfie · Opus</div><div class="you">add offline mode to shelfie</div><div class="cl">Spec drafted. <span class="hl">Approve?</span></div><div class="you">yes</div><div class="cl">Plan: 3 tasks (cache, sync, ui). <span class="hl">Approve?</span></div><div class="you">go</div><div class="cl">Spawned cache, sync, ui</div><div class="cl">cache APPROVE · sync BLOCK (round 1)</div><div class="cl">Draft PR #42 open. CI green. <span class="hl">Your merge.</span></div></div><div class="stack"><div class="pane"><b>shelfie-cache</b><small>claude attach shelfie-cache</small><span class="st d">Done</span></div><div class="pane"><b>shelfie-sync</b><small>fixing reviewer findings</small><span class="st w">Working</span></div><div class="pane"><b>shelfie-ui</b><small>permission prompt</small><span class="st n">Needs you</span></div></div></div>
+<div class="repo"><div class="chat"><div class="who">ngisa-shelfie · Opus</div><div class="you">add offline mode to shelfie</div><div class="cl">Spec drafted. <span class="hl">Approve?</span></div><div class="you">yes</div><div class="cl">Plan: 3 tasks (cache, sync, ui). <span class="hl">Approve?</span></div><div class="you">go</div><div class="cl">Spawned cache, sync, ui</div><div class="cl">cache gate-check ok · sync gate-check <span class="hl">FAIL</span></div><div class="cl">Draft PR #42 open. CI green. <span class="hl">Your merge.</span></div></div><div class="stack"><div class="pane"><b>shelfie-cache</b><small>claude attach shelfie-cache</small><span class="st d">Done</span></div><div class="pane"><b>shelfie-sync</b><small>gate-check failed</small><span class="st n">Needs you</span></div><div class="pane"><b>shelfie-ui</b><small>permission prompt</small><span class="st n">Needs you</span></div></div></div>
 </div>
 <ul class="rules"><li><b>Tab per repo</b><span>NGISA on the left (you type here), up to 3 agents stacked on the right. Open one with <code>repo-tab ~/lab/shelfie</code>.</span></li><li><b>Seeing every agent</b><span>Optional: run <code>claude agents</code> in any spare tab for every agent in every repo. Ctrl+S groups by repo.</span></li><li><b>Why not one global NGISA</b><span>It would plan without the repo's CLAUDE.md, mix every repo into one context, and one stuck prompt would stall all repos.</span></li></ul></section>
 
 <section aria-labelledby="f"><h2 id="f">From idea to merge</h2>
-<div class="key"><span style="color:var(--gate)"><i class="sw"></i>NGISA · Opus</span><span style="color:var(--agent)"><i class="sw"></i>Implementer · Sonnet, own worktree</span><span style="color:var(--review)"><i class="sw"></i>Reviewer · Opus</span><span style="color:var(--human)"><i class="sw"></i>You decide</span></div>
-<div class="fig"><svg viewBox="0 0 720 820" role="img" aria-label="Flow: your idea, spec and plan approved by you, NGISA spawns up to three implementers in worktrees, each reports to the reviewer, blocked work goes back to the same agent, approved work is merged to a feature branch and draft PR, CI runs, you merge to main.">
+<div class="key"><span style="color:var(--gate)"><i class="sw"></i>NGISA · Opus</span><span style="color:var(--agent)"><i class="sw"></i>Implementer · Sonnet, own worktree</span><span style="color:var(--human)"><i class="sw"></i>You decide</span></div>
+<div class="fig"><svg viewBox="0 0 720 820" role="img" aria-label="Flow: your idea, spec and plan approved by you, NGISA spawns up to three implementers in worktrees, each reports to the NGISA, which runs gate-check; a failed check stops for you; clean work is merged to a feature branch and draft PR, CI runs, you merge to main.">
         <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker></defs>
         <rect class="lane" x="10" y="36" width="170" height="776" rx="10"/>
         <rect class="lane" x="200" y="36" width="245" height="776" rx="10"/>
@@ -86,20 +86,17 @@
         <!-- report -->
         <path class="arr" d="M586 448V504H432" marker-end="url(#ah)"/>
         <text class="lab" x="596" y="482">report → @NGISA</text>
-        <!-- reviewer -->
-        <rect class="box rv" x="215" y="480" width="215" height="52" rx="8"/>
-        <text class="t" x="322" y="502" text-anchor="middle">Reviewer</text>
-        <text class="s" x="322" y="521" text-anchor="middle">APPROVE or BLOCK</text>
-        <path class="arr dash" d="M405 480V376H475" marker-end="url(#ah)"/>
-        <text class="lab" x="300" y="424" text-anchor="middle">BLOCK: same agent fixes</text>
-        <text class="lab" x="300" y="441" text-anchor="middle">max 2 rounds</text>
+        <!-- gate-check -->
+        <rect class="box g" x="215" y="480" width="215" height="52" rx="8"/>
+        <text class="t" x="322" y="502" text-anchor="middle">gate-check</text>
+        <text class="s" x="322" y="521" text-anchor="middle">gate files, lint config</text>
         <rect class="box hu hufill" x="16" y="482" width="149" height="48" rx="8"/>
-        <text class="t" x="90.5" y="504" text-anchor="middle">Break the tie</text>
-        <text class="s" x="90.5" y="521" text-anchor="middle">after 2 BLOCKs</text>
+        <text class="t" x="90.5" y="504" text-anchor="middle">Your call</text>
+        <text class="s" x="90.5" y="521" text-anchor="middle">if gate-check fails</text>
         <path class="arr dash" d="M215 506H167" marker-end="url(#ah)"/>
         <!-- merge -->
         <path class="arr" d="M322 532V578" marker-end="url(#ah)"/>
-        <text class="lab" x="330" y="560">APPROVE</text>
+        <text class="lab" x="330" y="560">clean</text>
         <rect class="box g" x="215" y="580" width="215" height="52" rx="8"/>
         <text class="t" x="322" y="602" text-anchor="middle">Feature branch</text>
         <text class="s" x="322" y="621" text-anchor="middle">ci_local.sh · draft PR</text>
@@ -112,13 +109,13 @@
         <text class="t" x="90.5" y="762" text-anchor="middle">Merge to main</text>
         <text class="s" x="90.5" y="781" text-anchor="middle">only you, hook-enforced</text>
       </svg></div>
-<ol class="fig-steps"><li data-o="human"><div><b>Your idea</b><span>You type a task to the NGISA.</span></div></li><li data-o="gate"><div><b>Brainstorm and spec</b><span>You approve the spec.</span></div></li><li data-o="gate"><div><b>Plan and task split</b><span>Files each task may touch. You approve the plan.</span></div></li><li data-o="gate"><div><b>agent-wall.sh</b><span>Spawns up to 3 workers and opens their panes.</span></div></li><li data-o="agent"><div><b>Implementers</b><span>shelfie-cache, shelfie-sync, shelfie-ui: own worktree, TDD, tests green. Each reports to @NGISA.</span></div></li><li data-o="review"><div><b>Reviewer</b><span>APPROVE or BLOCK. BLOCK goes back to the same agent, 2 rounds max. After 2 BLOCKs you break the tie.</span></div></li><li data-o="gate"><div><b>Feature branch</b><span><code>ci_local.sh</code> and a draft PR.</span></div></li><li data-o="agent"><div><b>CI + Claude review</b><span>On GitHub / GitLab.</span></div></li><li data-o="human"><div><b>Merge to main</b><span>Only you, hook-enforced.</span></div></li></ol></section>
+<ol class="fig-steps"><li data-o="human"><div><b>Your idea</b><span>You type a task to the NGISA.</span></div></li><li data-o="gate"><div><b>Brainstorm and spec</b><span>You approve the spec.</span></div></li><li data-o="gate"><div><b>Plan and task split</b><span>Files each task may touch. You approve the plan.</span></div></li><li data-o="gate"><div><b>agent-wall.sh</b><span>Spawns up to 3 workers and opens their panes.</span></div></li><li data-o="agent"><div><b>Implementers</b><span>shelfie-cache, shelfie-sync, shelfie-ui: own worktree, TDD, tests green. Each reports to @NGISA.</span></div></li><li data-o="gate"><div><b>gate-check</b><span>A script compares the gate files and lint config. A difference stops the merge and waits for you.</span></div></li><li data-o="gate"><div><b>Feature branch</b><span><code>ci_local.sh</code> and a draft PR.</span></div></li><li data-o="agent"><div><b>CI + Claude review</b><span>On GitHub / GitLab.</span></div></li><li data-o="human"><div><b>Merge to main</b><span>Only you, hook-enforced.</span></div></li></ol></section>
 
 <section aria-labelledby="o"><h2 id="o">What only you do</h2>
-<ul class="rules human"><li><b>Spec</b><span>What you actually want</span></li><li><b>Plan and task split</b><span>A bad split means merge conflicts in every agent</span></li><li><b>Reviewer deadlock</b><span>After 2 BLOCK rounds</span></li><li><b>Merge, release, publish</b><span>Blocked by a hook for agents</span></li><li><b>Card / PII handling</b><span>Read it yourself, every time</span></li><li><b>Device feel</b><span>Camera and scan UX, once per feature</span></li></ul></section>
+<ul class="rules human"><li><b>Spec</b><span>What you actually want</span></li><li><b>Plan and task split</b><span>A bad split means merge conflicts in every agent</span></li><li><b>Reading the diff</b><span>You are the reviewer; there is no review agent</span></li><li><b>Merge, release, publish</b><span>Blocked by a hook for agents</span></li><li><b>Card / PII handling</b><span>Read it yourself, every time</span></li><li><b>Device feel</b><span>Camera and scan UX, once per feature</span></li></ul></section>
 
 <section aria-labelledby="l"><h2 id="l">Max plan limits</h2>
-<ul class="rules"><li><b>3 per tab, 4 to 5 in total</b><span>agents per repo tab, and running at once across all repos.</span></li><li><b>About N times the burn</b><span>with N agents. They share the same 5-hour and weekly quota.</span></li><li><b>Sonnet for implementers</b><span>Opus only for the NGISA and the reviewer.</span></li></ul></section>
+<ul class="rules"><li><b>3 per tab, 4 to 5 in total</b><span>agents per repo tab, and running at once across all repos.</span></li><li><b>About N times the burn</b><span>with N agents. They share the same 5-hour and weekly quota.</span></li><li><b>Sonnet for implementers</b><span>Opus only for the NGISA.</span></li></ul></section>
 
 <p class="note">Full setup, with the agent files, the agent-wall.sh script and the hook rules, is in <a href="https://github.com/Khoa2001/ngisa/blob/main/docs/orchestration/one-terminal-orchestrator.md">one-terminal-orchestrator.md</a>.</p>
 
