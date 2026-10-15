@@ -112,7 +112,7 @@ Do not edit files outside the task's listed paths. If you must, stop and say so.
 name: reviewer
 description: Reviews one implementer branch against the plan task and the spec. Read-only.
 model: opus
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, SendMessage
 ---
 Diff the given branch against its base. Check: does it do the task as written, are tests real
 (would they fail without the change), any edits outside the task's paths, logging or leaking of
@@ -122,7 +122,7 @@ main checkout (`$(git rev-parse --path-format=absolute --git-common-dir)/..`). I
 so the git diff will not show them. Any difference is a BLOCK unless the task asked for it. Also BLOCK on weakened
 checks: a new line in `tool/known_failures.txt`, tests removed or skipped, assertions relaxed, lint or analyzer config loosened, new ignore/suppress comments.
 Output: APPROVE or BLOCK, then a numbered list of findings with file:line. Write it in caveman ultra (no articles or filler, fragments OK); paths, commands and quoted errors stay exact.
-Do not edit files.
+You run as a background worker with a pane the user watches. Send the verdict to the NGISA named in your task with SendMessage: summary = `APPROVE` or `BLOCK`, then the number of findings; message = the full numbered list. Do not edit files.
 ```
 
 ### 2b. Worktree hygiene for Flutter
@@ -271,7 +271,9 @@ claude --bg --name "$name" --agent "$agent" --model "$model" \
 if (( ${#others[@]} == 0 )); then
   wezterm cli split-pane --pane-id "$me" --right --percent 55 -- agent-view "$name"
 else
-  wezterm cli split-pane --pane-id "${others[-1]}" --bottom -- agent-view "$name"
+  # equal heights: the last pane holds 1/n of the column, the new one takes n/(n+1) of it
+  n=${#others[@]}
+  wezterm cli split-pane --pane-id "${others[-1]}" --bottom --percent $(( 100 * n / (n + 1) )) -- agent-view "$name"
 fi
 ```
 
@@ -280,6 +282,7 @@ Notes:
   each agent reports to its own repo's NGISA (`@ngisa-scanner`).
 - Each agent is a background session started from the repo, so its worktree is in that repo's
   `.claude/worktrees/`. Repos never share worktrees.
+- Reviewer panes: a task name ending in `-review` (`-review2` for a second round) opens to the right of that implementer's pane, so each row is implementer | reviewer. `agent-wall.sh` remembers the pane ids it opens in `~/.cache/ngisa/panes/<session>`; reviewers do not count toward the 3 worker slots. The shipped script is in `lab-quickstart.md`, step 3.
 - Panes are read-only views (`agent-view`: two-line header with state, model, elapsed time, branch and worktree; a `waiting` / `gate failed` / `report NOT delivered` / `done` line when it matters; a phase strip with `✓ ▶ · ✗`; one counters line; a `now` line; a short plain-language log with times; no input box). The NGISA's status line shows a `workers` roster (`ngisa-statusline`, wired in by `repo-tab`). To answer a worker that shows `needs you`, `claude attach <name>` in a spare pane. Closing a pane never stops the agent; `wezterm cli kill-pane` when done.
 - The "tab full" check counts panes, not running agents. If you closed a pane early, the agent still
   runs and still counts against your quota; check `claude agents`.
@@ -292,7 +295,9 @@ Notes:
    Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
    If you create a worker's worktree yourself with `git worktree add`, git skips `.worktreeinclude`: tell the worker in its task text
    to run `worktree-include` before anything else, so it gets `tool/setup.sh` and `tool/ci_local.sh`.
-4. When a worker's report arrives, run the `reviewer` subagent (in-process) on its branch.
+4. When a worker's report arrives, start its reviewer in a visible pane to the right of that worker's pane:
+   `agent-wall.sh <task-slug>-review reviewer opus "<branch, base branch, worktree path, the plan task text>"` (round 2: `<task-slug>-review2`).
+   The verdict arrives as a message (APPROVE or BLOCK first): wait for it, do not poll. Reviewers do not count toward the 3 workers.
    BLOCK -> message that worker with the findings (same session, same branch). Max 2 rounds, then ask me.
 ```
 
