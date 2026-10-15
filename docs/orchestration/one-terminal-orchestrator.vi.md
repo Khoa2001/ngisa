@@ -148,6 +148,8 @@ Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, q
   pleasantries, hedging; fragments OK; abbreviate (DB, auth, config, req, res, fn); arrows for causality. Paths, branches, commands,
   session ids, quoted errors: exact. Code, commits, PR text, security warnings: normal.
   Not: "I have started the implementer worker. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Reviewer next."
+  Long text too (reviewer verdicts, findings, decisions): numbered fragments, never prose paragraphs.
+  Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."
 Never: merge to main, force-push, publish, touch store/remote-config/signing, delete branches with unmerged work.
 ```
 
@@ -176,7 +178,7 @@ Trong `~/.claude/settings.json`, thêm vào hook format + Stop gate của playbo
 
 - Không có tab `overview` riêng. Cần xem hết thì chạy `claude agents` ở một tab trống: mọi agent của mọi repo. `Ctrl+S` gom theo repo. `Space` xem nhanh, `Enter` vào hẳn, `←` thoát ra. Dòng vàng = đang chờ bạn.
 - Mỗi tab repo: NGISA bên trái, tối đa 3 pane agent bên phải.
-- Pane chỉ để **xem**, không có ô nhập (`agent-view`: dòng đầu có trạng thái, model, branch và worktree; thanh phase; bộ đếm thời gian, số file đổi, commit và dòng gate cuối; luồng hoạt động viết bằng lời thường). Status line của NGISA có thêm dòng `workers` liệt kê worker (`ngisa-statusline`, `repo-tab` tự gắn vào). Muốn trả lời worker đang `needs you` thì chạy `claude attach <name>` ở một pane trống. Đóng pane **không** dừng agent.
+- Pane chỉ để **xem**, không có ô nhập (`agent-view`: header hai dòng có trạng thái, model, thời gian chạy, branch và worktree; dòng `waiting` / `gate failed` / `report NOT delivered` / `done` khi cần; thanh phase với `✓ ▶ · ✗`; một dòng bộ đếm; dòng `now`; nhật ký ngắn bằng lời thường kèm giờ). Status line của NGISA có thêm dòng `workers` liệt kê worker (`ngisa-statusline`, `repo-tab` tự gắn vào). Muốn trả lời worker đang `needs you` thì chạy `claude attach <name>` ở một pane trống. Đóng pane **không** dừng agent.
 
 ### Vì sao mỗi repo một NGISA, không phải một NGISA chung
 

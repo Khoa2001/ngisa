@@ -159,6 +159,8 @@ Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, q
   pleasantries, hedging; fragments OK; abbreviate (DB, auth, config, req, res, fn); arrows for causality. Paths, branches, commands,
   session ids, quoted errors: exact. Code, commits, PR text, security warnings: normal.
   Not: "I have started the implementer worker. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Reviewer next."
+  Long text too (reviewer verdicts, findings, decisions): numbered fragments, never prose paragraphs.
+  Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."
 Never: merge to main, force-push, publish, touch store/remote-config/signing, delete branches with unmerged work.
 ```
 
@@ -278,7 +280,7 @@ Notes:
   each agent reports to its own repo's NGISA (`@ngisa-scanner`).
 - Each agent is a background session started from the repo, so its worktree is in that repo's
   `.claude/worktrees/`. Repos never share worktrees.
-- Panes are read-only views (`agent-view`: header with state, model, branch and worktree; a phase strip; counters for elapsed time, files changed, commit and last gate line; a plain-language activity feed; no input box). The NGISA's status line shows a `workers` roster (`ngisa-statusline`, wired in by `repo-tab`). To answer a worker that shows `needs you`, `claude attach <name>` in a spare pane. Closing a pane never stops the agent; `wezterm cli kill-pane` when done.
+- Panes are read-only views (`agent-view`: two-line header with state, model, elapsed time, branch and worktree; a `waiting` / `gate failed` / `report NOT delivered` / `done` line when it matters; a phase strip with `✓ ▶ · ✗`; one counters line; a `now` line; a short plain-language log with times; no input box). The NGISA's status line shows a `workers` roster (`ngisa-statusline`, wired in by `repo-tab`). To answer a worker that shows `needs you`, `claude attach <name>` in a spare pane. Closing a pane never stops the agent; `wezterm cli kill-pane` when done.
 - The "tab full" check counts panes, not running agents. If you closed a pane early, the agent still
   runs and still counts against your quota; check `claude agents`.
 - Check `wezterm cli list --format json` on your version prints `tab_id`; it should.
