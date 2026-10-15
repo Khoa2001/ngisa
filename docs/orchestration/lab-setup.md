@@ -10,7 +10,7 @@ working unchanged, and deleting the clone removes every trace.
 ~/Projects/my_proj/ngisa/   the orchestrator files, versioned in your personal repo
 ~/lab/scanner/             throwaway clone: kit copied in as local, git-ignored files
    ├─ CLAUDE.local.md      orchestrator rules (loads on top of your global CLAUDE.md)
-   ├─ .claude/agents/      implementer.md, reviewer.md
+   ├─ .claude/agents/      implementer.md
    ├─ .claude/settings.local.json   block hook + permission allowlist
    ├─ tool/setup.sh        from agent-init (stack detected: Flutter, PHP)
    ├─ tool/ci_local.sh     from agent-init (the done gate)
@@ -24,7 +24,7 @@ The kit lives in your personal repo at `/Users/khoamai/Projects/my_proj/ngisa`. 
 ```bash
 mkdir -p /Users/khoamai/Projects/my_proj/ngisa/agents
 # paste from one-terminal-orchestrator.md:
-#   section 2a  -> ngisa/agents/implementer.md, ngisa/agents/reviewer.md
+#   section 2a  -> ngisa/agents/implementer.md
 #   section 2c  -> ngisa/orchestrating.md          (the "## Orchestrating" block)
 #   section 2d  -> ngisa/settings.local.json       (PreToolUse block hook + permissions.allow)
 # scripts (new commands only, they change nothing in Claude Code by existing):

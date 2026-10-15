@@ -47,7 +47,7 @@ Hypotheses to test:
 - Skip agent teams for code: experimental, shared checkout with no worktrees, about 7x the tokens, and their split mode does not support WezTerm.
 - Layout went through three versions: (1) one pane, (2) two windows (NGISA window plus agent wall), then the final one, (3) **one WezTerm window, one tab per repo**. Each repo tab has its NGISA on the left and up to 3 agent panes on the right. `repo-tab <path>` opens one.
 - **One NGISA per repo, not one global NGISA.** A global NGISA plans without the repo's CLAUDE.md, mixes repos in one context, and one stuck prompt stalls everything. Never run two NGISA sessions on the same repo.
-- Roles: NGISA = Opus, plans and dispatches, never writes code. Implementer = Sonnet, in its own worktree, TDD, reports to `@ngisa-<repo>`. Reviewer = Opus, answers APPROVE or BLOCK. A BLOCK goes back to the same implementer, for 2 rounds at most, and after that the human decides.
+- Roles: NGISA = Opus, plans and dispatches, never writes code. Implementer = Sonnet, in its own worktree, TDD, reports to `@ngisa-<repo>`. No reviewer agent (removed 2026-10-15): the user reviews the final diff. `gate-check` (a script) runs on each worker report.
 - Approved branches merge into a local feature branch, `ci_local.sh` runs, and a draft PR opens. Only the human merges to main (a hook enforces it).
 - Never run in bypass-permissions mode: agent reports to the NGISA then get held for approval. Use auto mode.
 - More tasks than slots: the NGISA starts 3 and queues the rest. `agent-wall.sh` refuses a 4th with "tab full".
@@ -56,24 +56,30 @@ Hypotheses to test:
 
 ### NGISA (2026-10-14)
 - The orchestrator is called **NGISA**, short for *NGƯỜI GIÁM SÁT* ("the supervisor" in Vietnamese). It was "gate", then briefly "Aegis". The repo is named `ngisa` too. "Gate" stays only for verification gates (human gates, the Stop gate, CI gates). Sessions are `ngisa-<repo>`, workers report to `@ngisa-<repo>`.
-- Caveman ultra comes from a hook, not a prompt: `settings.local.json` runs `caveman-ultra-hook` on `SessionStart` and `UserPromptSubmit`, so the NGISA, implementers and reviewer all get it, and worker final reports are terse. Code, commits and PR text stay normal. Checked: the hook fires and injects in a headless session; model compliance varies by model (Haiku ignored it on a plain question).
-- The NGISA can relay extra requests to a worker (for example `/carve`) and has a quick-task path (one small edit in 1-2 named files, no plan, one implementer, reviewer still runs).
+- Caveman ultra comes from a hook, not a prompt: `settings.local.json` runs `caveman-ultra-hook` on `SessionStart` and `UserPromptSubmit`, so the NGISA and implementers all get it, and worker final reports are terse. Code, commits and PR text stay normal. Checked: the hook fires and injects in a headless session; model compliance varies by model (Haiku ignored it on a plain question).
+- The NGISA can relay extra requests to a worker (for example `/carve`) and has a quick-task path (one small edit in 1-2 named files, no plan, one implementer, gate-check still runs).
 - PRs from a lab go through `agent-pr` only. `make-lab` adds the real remote as `upstream` (origin stays the local source with a `DISABLED` push URL). `git push` stays denied in `settings.local.json`; `agent-pr` is not in any allow list, so each call needs the user's approval. It refuses main, master, the base branch, `worktree-*` names and dirty trees, opens a DRAFT PR with `gh` for github.com and `tea` otherwise (busy-bees is on Gitea).
 
 ### Stack-agnostic workers (2026-10-15)
 - The implementer prompt names no tool. It runs `tool/setup.sh` and gates on `tool/ci_local.sh`, both owned by the repo and written once by `agent-init` from the detected stack (Flutter via `pubspec.yaml`/`melos.yaml`, PHP via `composer.json`). A root manifest wins, else one level down, so a Flutter app plus a PHP backend get one gate. No manifest: nothing is written and `agent-init` says so.
 - `agent-init` also writes `.worktreeinclude` (per stack secrets) and `.claude/ngisa-settings.json` (edit deny for the code dirs that exist). `repo-tab` prefers that file and falls back to the kit's Flutter `ngisa-settings.json`. `make-lab` copies the secrets listed in `.worktreeinclude`.
 - Each task from the NGISA carries paths, stack and test command; the worker uses them first and the repo files as fallback. Non-command conventions go in the repo's `CLAUDE.md`.
-- Gate integrity: `settings.local.json` denies Edit (covers Write) on `tool/setup.sh` and `tool/ci_local.sh`; the reviewer BLOCKs a worktree whose copy differs from the main checkout, or weakened tests and lint. Known gap: shell edits. The implementer must report a failing or unrunnable gate, not fake green.
+- Gate integrity: `settings.local.json` denies Edit (covers Write) on `tool/setup.sh` and `tool/ci_local.sh`; `gate-check` fails a worktree whose copy of the gate files differs from the main checkout, or a branch that changed lint, analyzer, test or CI config. Known gap: it runs after the worker is done, so a shell edit is reported, not prevented. The implementer must report a failing or unrunnable gate, not fake green.
 - Checked headless on 2026-10-15, see `docs/runs/2026-10-15-stack-agnostic-checks.md`. Pane layout, queueing and report delivery through `agent-wall.sh` were not exercised.
 - The generated PHP gate is still a guess at pint, php-cs-fixer, phpstan and phpunit: review it against the repo's CI. `dotbedu_preschool_busybee` is a DotB monolith with no `composer.json`, so `agent-init` has a plain-PHP kind: a root `index.php` means no install step, `php -l` on changed `.php` files, and every `tests/*_test.php` must exit 0 (`./tool/ci_local.sh <paths>` runs chosen ones). Its code is vendored and PHP is 7.4. The generated gate passed on the lab, failed on a syntax error and on a failing test, and a worker finished a task through it and committed.
 - Flutter gate on a repo that is not clean: busy-bees has 398 unformatted files, 158 analyzer warnings and 15 failing tests, so a repo-wide gate is red from the start. The generated gate therefore formats only changed files and fails warnings only in changed files. Failing tests: `./tool/ci_local.sh --record-baseline` (first argument only, run by a human once on a clean base) writes `tool/known_failures.txt`; the gate then fails only on failures not in it. busy-bees: 15 recorded, gate exits 0, a full run is about 11 minutes.
 - `make-lab` copies a `CLAUDE.md` or `AGENTS.md` that git does not track (busy-bees gitignores it) and lists it in `.worktreeinclude`, so workers see it. Before this, labs of such repos had no `CLAUDE.md`.
 - Worktree sessions do load the lab's `.claude/settings.local.json` (the deny on `tool/ci_local.sh` held inside a worktree), which closes that open item.
 
+### Review stage removed (2026-10-15)
+- Why: the user reviews every result anyway, so the Opus reviewer and its BLOCK loop (2 rounds) only added latency and quota use.
+- What stays: `gate-check <branch> [base]` (a script in `~/bin`, no LLM) fails on a differing `tool/ci_local.sh`, `tool/setup.sh` or `tool/known_failures.txt`, or on changed lint, analyzer, test or CI config. The NGISA runs it on each report and stops on exit 1.
+- What is lost: the reviewer's checks for secrets or PII in the diff, edits outside the task's paths, and tests that would pass without the change. The user covers them at the final diff.
+- Old runs under `docs/runs/` still describe the reviewer; they are research data and were not rewritten.
+
 ### Max plan limits
 - Every agent draws on the same 5-hour and weekly quota. Keep it to 3 agents per tab and about 4 or 5 running across all repos.
-- Implementers on Sonnet; Opus only for the NGISA and the reviewer.
+- Implementers on Sonnet; Opus only for the NGISA.
 
 ### Lab (docs/orchestration/lab-setup.md, lab-quickstart.md)
 - The orchestrator is still experimental, so the global `~/.claude/CLAUDE.md` stays untouched. Test it in throwaway clones under `~/lab/<repo>`.
@@ -87,11 +93,11 @@ Hypotheses to test:
 
 | Kit file | Source in the docs |
 |---|---|
-| `agents/implementer.md`, `agents/reviewer.md` | one-terminal-orchestrator.md section 2a |
+| `agents/implementer.md` | one-terminal-orchestrator.md section 2a |
 | `orchestrating.md` (becomes `CLAUDE.local.md` in a lab) | section 2c, plus the queue, quick-task, relay and PR rules from lab-quickstart.md |
 | `settings.local.json` (permissions + caveman hook) | section 2d, plus lab-quickstart.md step 2 |
 | `ngisa-settings.json` (NGISA-only edit deny, Flutter fallback; per-repo copy comes from `agent-init`) | lab-quickstart.md step 2 |
-| `~/bin/agent-init`, `make-lab`, `repo-tab`, `agent-wall.sh`, `agent-pr`, `caveman-ultra-hook` | lab-quickstart.md step 3 |
+| `~/bin/agent-init`, `make-lab`, `repo-tab`, `agent-wall.sh`, `agent-pr`, `caveman-ultra-hook`, `gate-check` | lab-quickstart.md step 3 |
 
 If the kit and the docs disagree, the newest doc wins. lab-quickstart.md has the latest changes: fvm detection in `agent-init`, `ngisa-settings.json`, the queue rule, and the NGISA rules below. The kit files and `~/bin` scripts are regenerated from its heredocs.
 
@@ -109,7 +115,7 @@ If the kit and the docs disagree, the newest doc wins. lab-quickstart.md has the
 - Exercise the real flow in WezTerm once: `agent-wall.sh` panes, the queue, report delivery.
 - Pick the 3 real projects and a human-only or assisted baseline task.
 - Decide where run logs and metrics live (this repo is the natural place: add `runs/`).
-- Close the NGISA's shell-edit gap. Same for workers: a shell edit of `tool/ci_local.sh` is only caught by the reviewer's diff.
+- Close the NGISA's shell-edit gap. Same for workers: a shell edit of `tool/ci_local.sh` is only caught by `gate-check`, after the fact.
 - Run `agent-pr` for real against a throwaway repo on GitHub and on Gitea. Only the dry run and the guards were tested.
 - Check that Opus and Sonnet follow the caveman hook, and that worktree sessions load the hook (they use the project settings of the main clone).
 - Fix the worktree branch naming mismatch.

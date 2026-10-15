@@ -5,7 +5,7 @@
 
 **Tóm lại:**
 - Không tự build framework, không cài thêm tool quản lý tmux. Claude Code đã có đủ.
-- Mỗi repo có **một NGISA** (session Opus): lên kế hoạch, chia task, giao cho các **implementer** (Sonnet, chạy nền, mỗi con một **worktree** riêng), rồi cho **reviewer** (Opus) kiểm từng kết quả.
+- Mỗi repo có **một NGISA** (session Opus): lên kế hoạch, chia task, giao cho các **implementer** (Sonnet, chạy nền, mỗi con một **worktree** riêng), rồi chạy script `gate-check` trên từng kết quả (bạn tự đọc diff).
 - WezTerm: **một cửa sổ, mỗi tab là một repo**. NGISA bên trái, tối đa 3 agent xếp chồng bên phải.
 - Agent teams: **chưa dùng cho code** (thử nghiệm, không có worktree, tốn ~7× token, không chạy được split của WezTerm).
 - Chưa có hook + CI gate thì đừng chạy song song: chỉ nhân số thứ bạn phải tự kiểm. Làm [cut-verification-time.md](../verification/cut-verification-time.md) trước.
@@ -34,7 +34,7 @@ Gần như mọi thứ nằm ở thư mục home, dùng chung mọi repo. Mỗi 
 
 | Thành phần | Đặt ở đâu | Phạm vi |
 |---|---|---|
-| `implementer.md`, `reviewer.md` | `~/.claude/agents/` | 1 lần, mọi repo |
+| `implementer.md` | `~/.claude/agents/` | 1 lần, mọi repo |
 | Luật cho NGISA | `~/.claude/CLAUDE.md` (hoặc skill `~/.claude/skills/orchestrate/`) | 1 lần |
 | Hook format, Stop gate, chặn lệnh không đảo ngược được, allowlist quyền | `~/.claude/settings.json` | 1 lần |
 | `agent-wall.sh`, `repo-tab`, `agent-init` | `~/bin/` (có trong PATH) | 1 lần |
@@ -96,25 +96,7 @@ The task text gives the paths you may touch, the stack and the test command. Any
 Do not edit files outside the task's listed paths. If you must, stop and say so.
 ```
 
-`~/.claude/agents/reviewer.md`
-
-```markdown
----
-name: reviewer
-description: Reviews one implementer branch against the plan task and the spec. Read-only.
-model: opus
-tools: Read, Grep, Glob, Bash, SendMessage
----
-Diff the given branch against its base. Check: does it do the task as written, are tests real
-(would they fail without the change), any edits outside the task's paths, logging or leaking of
-sensitive data (PII, card data, tokens, secrets), anything irreversible.
-Gate integrity: run `diff` on `tool/ci_local.sh`, `tool/setup.sh` and (if it exists) `tool/known_failures.txt` between the branch's worktree and the
-main checkout (`$(git rev-parse --path-format=absolute --git-common-dir)/..`). In a lab these files are untracked,
-so the git diff will not show them. Any difference is a BLOCK unless the task asked for it. Also BLOCK on weakened
-checks: a new line in `tool/known_failures.txt`, tests removed or skipped, assertions relaxed, lint or analyzer config loosened, new ignore/suppress comments.
-Output: APPROVE or BLOCK, then a numbered list of findings with file:line. Write it in caveman ultra (no articles or filler, fragments OK); paths, commands and quoted errors stay exact.
-You run as a background worker with a pane the user watches. Send the verdict to the NGISA named in your task with SendMessage: summary = `APPROVE` or `BLOCK`, then the number of findings; message = the full numbered list. Do not edit files.
-```
+Không có reviewer agent. Bạn tự đọc diff; `gate-check` (xem `lab-quickstart.md`, bước 3) chỉ bảo vệ các file gate và cấu hình lint.
 
 ### 2b. Worktree với Flutter
 
@@ -135,22 +117,22 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
    If you create a worker's worktree yourself with `git worktree add`, git skips `.worktreeinclude`: tell the worker in its task text
    to run `worktree-include` before anything else, so it gets `tool/setup.sh` and `tool/ci_local.sh`.
-4. When a worker's report arrives, start its reviewer in a visible pane to the right of that worker's pane:
-   `agent-wall.sh <task-slug>-review reviewer opus "<branch, base branch, worktree path, the plan task text>"` (round 2: `<task-slug>-review2`).
-   The verdict arrives as a message (APPROVE or BLOCK first): wait for it, do not poll. Reviewers do not count toward the 3 workers.
-   BLOCK -> message that worker with the findings (same session, same branch). Max 2 rounds, then ask me.
+4. When a worker's report arrives, run `gate-check <branch> <base branch>` (branch from the report; base is the branch the plan was cut from).
+   Exit 0: go on. Exit 1 (findings) or 2 (error, e.g. wrong branch name): stop, show me its output, do not merge that branch until I decide. It only compares the gate files and the
+   lint/analyzer/CI config; I read the diff myself, so do not add your own review.
 5. Only one agent runs integration tests / the emulator at a time.
-6. Merge APPROVED task branches into the feature branch locally, run ./tool/ci_local.sh, push the feature branch, open a DRAFT PR.
-7. Report to me: one table (task | branch | reviewer verdict | tests | unverified items), plus the PR link.
+6. Merge task branches that passed the latest gate-check (or that I allowed) into the feature branch locally, run ./tool/ci_local.sh, push the feature branch, open a DRAFT PR.
+7. Report to me: one table (task | branch | gate-check | tests | unverified items), plus the PR link.
 Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
-  Spawn ONE implementer with exactly those paths, then run the reviewer as usual. Anything bigger: say it needs a plan.
+  Spawn ONE implementer with exactly those paths, then run gate-check as usual. Anything bigger: say it needs a plan.
 Relay: when I ask for something extra from a worker (e.g. "have it carve", "fix the lint"), SendMessage it to
   that worker (same session, same branch). For carve: tell it to run /carve; I answer its prompts with `claude attach <name>` (worker panes are read-only).
+  After any relay that changes a worker's commits, run gate-check on that branch again before merging.
 Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, questions, report tables): drop articles, filler,
   pleasantries, hedging; fragments OK; abbreviate (DB, auth, config, req, res, fn); arrows for causality. Paths, branches, commands,
   session ids, quoted errors: exact. Code, commits, PR text, security warnings: normal.
-  Not: "I have started the implementer worker. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Reviewer next."
-  Long text too (reviewer verdicts, findings, decisions): numbered fragments, never prose paragraphs.
+  Not: "I have started the implementer worker. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Gate-check next."
+  Long text too (findings, decisions): numbered fragments, never prose paragraphs.
   Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."
 Never: merge to main, force-push, publish, touch store/remote-config/signing, delete branches with unmerged work.
 ```
@@ -180,14 +162,13 @@ Trong `~/.claude/settings.json`, thêm vào hook format + Stop gate của playbo
 
 - Không có tab `overview` riêng. Cần xem hết thì chạy `claude agents` ở một tab trống: mọi agent của mọi repo. `Ctrl+S` gom theo repo. `Space` xem nhanh, `Enter` vào hẳn, `←` thoát ra. Dòng vàng = đang chờ bạn.
 - Mỗi tab repo: NGISA bên trái, tối đa 3 pane agent bên phải.
-- Pane reviewer: tên task kết thúc bằng `-review` (`-review2` cho vòng hai) mở ngay bên phải pane của implementer đó, nên mỗi hàng là implementer | reviewer. `agent-wall.sh` nhớ id pane đã mở trong `~/.cache/ngisa/panes/<session>`; reviewer không tính vào 3 slot worker. Script đầy đủ nằm ở `lab-quickstart.md`, bước 3.
-- Pane chỉ để **xem**, không có ô nhập (`agent-view` chỉ hiện trạng thái: tên, `working` / `needs you` / `done` kèm thời gian, một dòng mờ (branch) và một dòng kết quả (commit của implementer, `N findings` của reviewer; reviewer hiện `reviewing`, rồi `APPROVED` hoặc `BLOCK`); có dòng `quiet for Nm` khi worker im lặng từ 2 phút, và một dòng đỏ nếu NGISA không nhận được kết quả; không có ô nhập; `AGENT_VIEW_DETAIL=1` bật lại bản đầy đủ). Status line của NGISA có thêm dòng `workers` liệt kê worker (`ngisa-statusline`, `repo-tab` tự gắn vào). Muốn trả lời worker đang `needs you` thì chạy `claude attach <name>` ở một pane trống. Đóng pane **không** dừng agent.
+- Pane chỉ để **xem**, không có ô nhập (`agent-view` chỉ hiện trạng thái: tên, `working` / `needs you` / `done` kèm thời gian, một dòng mờ (branch) và một dòng kết quả (commit); có dòng `quiet for Nm` khi worker im lặng từ 2 phút, và một dòng đỏ nếu NGISA không nhận được kết quả; không có ô nhập; `AGENT_VIEW_DETAIL=1` bật lại bản đầy đủ). Status line của NGISA có thêm dòng `workers` liệt kê worker (`ngisa-statusline`, `repo-tab` tự gắn vào). Muốn trả lời worker đang `needs you` thì chạy `claude attach <name>` ở một pane trống. Đóng pane **không** dừng agent.
 
 ### Vì sao mỗi repo một NGISA, không phải một NGISA chung
 
 Một NGISA chung cho mọi repo làm được, nhưng đừng:
 - **Lên plan mù.** Session chỉ load `CLAUDE.md`, settings, skill của thư mục nó khởi động. NGISA đặt ở `~/code` sẽ không đọc `CLAUDE.md` của scanner khi viết plan, mà plan là bước quan trọng nhất.
-- **Một context cho tất cả.** Spec, plan, kết quả review của 3 repo dồn vào một cuộc hội thoại, compact sớm, và compact thì mất chi tiết plan trước.
+- **Một context cho tất cả.** Spec, plan, findings của 3 repo dồn vào một cuộc hội thoại, compact sớm, và compact thì mất chi tiết plan trước.
 - **Một chỗ kẹt là kẹt hết.** NGISA chờ một permission prompt hoặc chờ reset usage limit thì mọi repo đều đứng.
 
 "Global" vẫn đúng ở chỗ cần: agent, luật, hook, script đều ở user-level, và `claude agents` thấy hết.
@@ -247,9 +228,9 @@ repo-tab ~/code/my_app        # tab này thành NGISA của repo (tab mới nế
 > /superpowers:brainstorming  … → spec. Bạn đọc spec.               # CỔNG 1: ý định
 > writing-plans …             → plan + file mỗi task. Bạn duyệt.    # CỔNG 2: plan
 > "execute the plan per Orchestrating rules"
-   → implementer chạy nền trong worktree, reviewer kiểm từng cái
+   → implementer chạy nền trong worktree, gate-check chạy trên từng cái
    → bạn nhận 1 bảng + link draft PR
-# CI xanh + reviewer APPROVE hết → bạn xem tóm tắt PR + golden diff  # CỔNG 3
+# CI xanh + gate-check sạch hết → bạn xem tóm tắt PR + golden diff  # CỔNG 3
 # Bạn merge.                                                          # CỔNG 4: không đảo ngược
 ```
 
@@ -259,17 +240,17 @@ Agent view xoá worktree do Claude tạo khi bạn xoá session. Implementer có
 
 1. **Spec / tiêu chí nghiệm thu.** Ý định thật của bạn, agent không đoán được.
 2. **Duyệt plan, kể cả cách chia task.** Chia sai = conflict nhân với số agent.
-3. **Reviewer và implementer cãi nhau quá 2 vòng.** Bạn quyết.
+3. **`gate-check` báo lỗi.** Bạn quyết định: giữ thay đổi (task có yêu cầu) hoặc trả lại cho worker.
 4. **Merge vào main, release, pub.dev, store, remote config, signing, secret.** Hook chặn, chỉ bạn làm được.
 5. **Mọi thứ đụng dữ liệu CCCD/PII.** Tự đọc, lần nào cũng đọc.
 6. **Cảm giác trên máy thật** (camera, UX quét thẻ). Mỗi feature một lần, lúc cuối.
 
-Còn lại (format, analyze, test, chia việc, review từng task) là việc của máy.
+Còn lại (format, analyze, test, chia việc, `gate-check` từng task) là việc của máy.
 
 ## 6. Gói Max: sẽ chạm limit
 
 - Mọi agent nền, subagent, workflow agent của **mọi repo** dùng **chung** quota 5 tiếng và quota tuần. 10 agent song song = tốn quota nhanh ~10 lần. Agent teams ~7 lần một session.
-- Opus chỉ cho NGISA + reviewer. Sonnet cho implementer. Haiku cho việc cơ học. Ghim `model: sonnet` trong file agent, đừng để implementer kế thừa Opus củan NGISA.
+- Opus chỉ cho NGISA. Sonnet cho implementer. Haiku cho việc cơ học. Ghim `model: sonnet` trong file agent, đừng để implementer kế thừa Opus củan NGISA.
 - **Tối đa 3 agent mỗi tab repo, khoảng 4–5 agent chạy cùng lúc tổng cộng.** Chạy nặng ở một repo một lúc; repo khác để lên plan hoặc review.
 - Bật `autoContinueAtUsageLimit` để chờ reset thay vì hỏng giữa chừng.
 - Xem `/usage` (phần attribution) hàng tuần để biết agent nào ăn quota.
@@ -284,13 +265,13 @@ Còn lại (format, analyze, test, chia việc, review từng task) là việc c
 ## 8. Đo lường (gắn với giả thuyết của project)
 
 Project đặt cược: agent song song trong worktree thắng một agent context dài trên task lớn. Kiểm chứng: làm 2 feature tương đương, mỗi cách một cái, ghi lại mỗi feature:
-`wall-clock | your minutes | interventions (intent / plan-wrong / merge-conflict / test-gap / taste / irreversible / agent-error) | reviewer BLOCKs | CI red after merge | % of 5h window used`.
+`wall-clock | your minutes | interventions (intent / plan-wrong / merge-conflict / test-gap / taste / irreversible / agent-error) | gate-check FAILs | CI red after merge | % of 5h window used`.
 Nếu "merge-conflict" và "plan-wrong" chiếm phần lớn ở bản song song, thì lỗi ở cách chia task, không phải ở agent.
 
 ## Thứ tự triển khai
 
 1. Hook verification + `ci_local.sh` (playbook trước) nếu chưa có.
-2. `implementer.md` + `reviewer.md` + `agent-init` trong repo đầu tiên.
+2. `implementer.md` + `agent-init` trong repo đầu tiên.
 3. Luật NGISA + hook chặn `PreToolUse` + allowlist quyền.
 4. `repo-tab` + `agent-wall.sh`. Chạy một feature với tối đa 2 implementer. Sửa chỗ hỏng.
 5. Lên 3 implementer, rồi mở tab repo thứ hai.

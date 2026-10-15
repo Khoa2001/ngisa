@@ -1,5 +1,7 @@
 # Cutting your verification time (superpowers + Claude Max)
 
+> Kit note (2026-10-15): the NGISA kit no longer runs a reviewer agent. You review the diff yourself, and `gate-check` only compares gate files and lint config. The review-agent advice below is kept as research.
+
 Bottom line: your time goes into checking things a machine could check. Superpowers
 already *tells* the agent to verify (`verification-before-completion`, task reviewers in
 `subagent-driven-development`), but those are prompts. A prompt can be skipped. Hooks and CI cannot.

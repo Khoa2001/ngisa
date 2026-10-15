@@ -1,6 +1,6 @@
 # ngisa
 
-The orchestrator kit (NGISA, implementer and reviewer agents, hooks, scripts) and the research docs behind it. Read `CONTEXT.md` first: it has the goals, the decisions so far, and the open items.
+The orchestrator kit (NGISA, implementer agent, hooks, scripts) and the research docs behind it. Read `CONTEXT.md` first: it has the goals, the decisions so far, and the open items.
 
 ## Layout
 - `agents/`, `orchestrating.md`, `settings.local.json`, `ngisa-settings.json`: the kit. `make-lab` copies these into `~/lab/<repo>`.
@@ -11,4 +11,4 @@ The orchestrator kit (NGISA, implementer and reviewer agents, hooks, scripts) an
 - Every doc has a Vietnamese copy (`*.vi.md`, `*.vi.html`). Update both. Keep code, commands and config in English in both.
 - Scripts call `fvm flutter` / `fvm dart`, never bare `flutter`.
 - Do not touch `~/.claude` or the global CLAUDE.md. Everything here is tested in `~/lab` first.
-- Log each run (time, interventions and why, BLOCKs, cost) under `docs/runs/`. These logs are the research data.
+- Log each run (time, interventions and why, gate-check FAILs, cost) under `docs/runs/`. These logs are the research data.

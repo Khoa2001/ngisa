@@ -14,7 +14,7 @@
 <style>
 :root{
   --bg:#0d1117; --win:#141a24; --bar:#1c2330; --line:#2a3140; --fg:#d6dde8; --muted:#8b95a7;
-  --gate:#9d8cff; --agent:#3cc4b2; --review:#e7a447; --human:#ff6b5f; --ok:#4cc68a; --warn:#e7b93e;
+  --gate:#9d8cff; --agent:#3cc4b2; --human:#ff6b5f; --ok:#4cc68a; --warn:#e7b93e;
   --mono:Menlo, "SF Mono", ui-monospace, Consolas, monospace;
   --sans:-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 }
@@ -32,13 +32,13 @@ html,body{margin:0;width:960px;height:540px;background:var(--bg);overflow:hidden
 .you{color:#fff}.you::before{content:"> ";color:var(--muted)}
 .cl::before{content:"\25CF  ";color:var(--gate)}
 .hl{color:var(--human);font-weight:700}
-.ok{color:var(--ok)}.bad{color:var(--review)}
-.stack{display:grid;grid-template-rows:repeat(3,1fr);gap:2px;background:var(--line)}
+.ok{color:var(--ok)}
+.stack{display:grid;grid-template-rows:repeat(2,1fr);gap:2px;background:var(--line)}
 .pane{background:var(--win);padding:9px 12px;font:12px/1.5 var(--mono);color:#b9c3d3;display:flex;flex-direction:column;gap:3px;min-height:0;overflow:hidden}
 .pane.empty{align-items:center;justify-content:center;color:#3b4456}
 .ph{display:flex;align-items:center;gap:8px;color:#fff;font-weight:600}
 .st{font:600 10px var(--sans);padding:1px 8px;border-radius:99px;color:#10141b}
-.st.w{background:var(--agent);color:#10141b}.st.r{background:var(--review);color:#10141b}.st.d{background:var(--ok)}.st.n{background:var(--warn)}
+.st.w{background:var(--agent);color:#10141b}.st.d{background:var(--ok)}.st.n{background:var(--warn)}
 .dim{color:var(--muted)}
 .cap{position:absolute;left:20px;right:20px;top:482px;height:44px;display:flex;align-items:center;gap:12px;color:#fff;font-size:17px;font-weight:600}
 .cap .n{flex:none;width:28px;height:28px;border-radius:50%;background:var(--gate);color:#10141b;display:flex;align-items:center;justify-content:center;font-size:14px}
@@ -55,7 +55,7 @@ html.emb .pane{font-size:12.5px}
 @media (max-width:640px){
   html.emb .body{grid-template-columns:1fr;min-height:0}
   html.emb .ngisa{min-height:290px}
-  html.emb .stack{grid-template-rows:repeat(3,minmax(84px,auto))}
+  html.emb .stack{grid-template-rows:repeat(2,minmax(84px,auto))}
   html.emb .cap{font-size:15px}
 }
 
@@ -85,29 +85,24 @@ const T = {
     plan: "Plan: 2 tasks (cache, sync). <span class=hl>Approve?</span>",
     go: "go",
     spawned: "Spawned cache, sync",
-    cacheOk: "cache <span class=ok>APPROVE</span>",
-    syncBlock: "sync <span class=bad>BLOCK</span> (round 1): no test for retry",
-    syncOk: "sync <span class=ok>APPROVE</span> (round 2)",
-    done: "Feature branch merged, CI green. Draft PR ready. <span class=hl>Your merge.</span>",
-    working: "Working", fixing: "Fixing", done_: "Done", review: "Reviewing",
+    cacheOk: "cache gate-check <span class=ok>ok</span>",
+    syncOk: "sync gate-check <span class=ok>ok</span>",
+    merged: "Merged cache, sync into a feature branch",
+    done: "Draft PR ready. <span class=hl>Your merge.</span>",
+    working: "Working", done_: "Done",
     wt: "own git worktree",
     tests: "write failing test, make it pass",
     gateRun: "./tool/ci_local.sh ...",
     gateOk: "./tool/ci_local.sh <span class=ok>exit 0</span>",
-    reviewing: "check branch against task",
-    gatefiles: "gate files unchanged: ok",
-    revCache: "cache: APPROVE",
-    revSync1: "sync: BLOCK, add retry test",
-    revSync2: "sync: APPROVE",
     caps: [
       "You give NGISA a task",
       "NGISA plans and splits it",
       "You approve the plan",
       "Workers start, each in its own git worktree",
       "Each worker must pass the repo's tool/ci_local.sh",
-      "A reviewer checks every branch",
-      "BLOCK goes back to the same worker",
-      "Fixed, gate green, approved",
+      "NGISA runs gate-check: gate files untouched",
+      "Clean branches merge into a feature branch",
+      "ci_local.sh runs again, draft PR ready",
       "Only you merge to main"
     ],
     note: "illustrative"
@@ -117,29 +112,24 @@ const T = {
     plan: "Plan: 2 task (cache, sync). <span class=hl>Duyệt?</span>",
     go: "go",
     spawned: "Đã tạo agent cache, sync",
-    cacheOk: "cache <span class=ok>APPROVE</span>",
-    syncBlock: "sync <span class=bad>BLOCK</span> (vòng 1): thiếu test retry",
-    syncOk: "sync <span class=ok>APPROVE</span> (vòng 2)",
-    done: "Nhánh feature đã gộp, CI xanh. Draft PR sẵn sàng. <span class=hl>Bạn merge.</span>",
-    working: "Đang chạy", fixing: "Đang sửa", done_: "Xong", review: "Đang review",
+    cacheOk: "cache gate-check <span class=ok>ok</span>",
+    syncOk: "sync gate-check <span class=ok>ok</span>",
+    merged: "Đã gộp cache, sync vào nhánh feature",
+    done: "Draft PR sẵn sàng. <span class=hl>Bạn merge.</span>",
+    working: "Đang chạy", done_: "Xong",
     wt: "git worktree riêng",
     tests: "viết test fail, làm cho pass",
     gateRun: "./tool/ci_local.sh ...",
     gateOk: "./tool/ci_local.sh <span class=ok>exit 0</span>",
-    reviewing: "đối chiếu nhánh với task",
-    gatefiles: "file gate không đổi: ok",
-    revCache: "cache: APPROVE",
-    revSync1: "sync: BLOCK, thêm test retry",
-    revSync2: "sync: APPROVE",
     caps: [
       "Bạn giao việc cho NGISA",
       "NGISA lên plan và chia task",
       "Bạn duyệt plan",
       "Worker khởi động, mỗi worker một git worktree",
       "Mỗi worker phải qua tool/ci_local.sh của repo",
-      "Reviewer kiểm tra từng nhánh",
-      "BLOCK quay lại đúng worker đó",
-      "Sửa xong, gate xanh, được duyệt",
+      "NGISA chạy gate-check: file gate không bị đụng",
+      "Nhánh sạch được gộp vào nhánh feature",
+      "ci_local.sh chạy lại, draft PR sẵn sàng",
       "Chỉ bạn được merge vào main"
     ],
     note: "minh họa"
@@ -187,16 +177,17 @@ function itemState(it, t){
 }
 
 function model(lang){
-  const t = T[lang], dim = s => `<span class=dim>${s}</span>`, ok = s => `<span class=ok>${s}</span>`, bad = s => `<span class=bad>${s}</span>`;
+  const t = T[lang], dim = s => `<span class=dim>${s}</span>`;
   const ngisa = [
-    {id:"task",  cls:"you", at:250,   rate:38, html:t.task},
-    {id:"plan",  cls:"cl",  at:1750,  rate:16, html:t.plan},
-    {id:"go",    cls:"you", at:3500,  rate:90, html:t.go},
-    {id:"spawn", cls:"cl",  at:4800,  rate:0,  html:t.spawned},
-    {id:"cacheOk",cls:"cl", at:11300, rate:0,  html:t.cacheOk},
-    {id:"block", cls:"cl",  at:11650, rate:16, html:t.syncBlock},
-    {id:"syncOk",cls:"cl",  at:13800, rate:0,  html:t.syncOk},
-    {id:"done",  cls:"cl",  at:15700, rate:14, html:t.done}
+    {id:"task",   cls:"you", at:250,   rate:38, html:t.task},
+    {id:"plan",   cls:"cl",  at:1750,  rate:16, html:t.plan},
+    {id:"go",     cls:"you", at:3500,  rate:90, html:t.go},
+    {id:"spawn",  cls:"cl",  at:4800,  rate:0,  html:t.spawned},
+    {id:"cacheOk",cls:"cl",  at:9500,  rate:0,  html:t.cacheOk},
+    {id:"syncOk", cls:"cl",  at:10300, rate:0,  html:t.syncOk},
+    {id:"merged", cls:"cl",  at:11300, rate:16, html:t.merged},
+    {id:"ci",     cls:"cl",  at:13500, rate:0,  html:t.gateOk},
+    {id:"done",   cls:"cl",  at:15700, rate:14, html:t.done}
   ];
   const slot = (id, list) => list.map((e, i) => Object.assign({id: id + i}, e));
   const panes = [
@@ -205,13 +196,9 @@ function model(lang){
      l1: slot("c1", [{at:4950, rate:0, html:dim(t.wt)}, {at:9300, rate:30, html:t.gateOk}]),
      l2: slot("c2", [{at:5200, rate:22, html:t.tests}, {at:6900, rate:30, html:t.gateRun}, {at:9300, rate:0, html:""}])},
     {name:"shelfie-sync", at:4800,
-     status:[{at:4800, txt:t.working, c:"w"}, {at:11500, txt:t.fixing, c:"n"}, {at:13700, txt:t.done_, c:"d"}],
-     l1: slot("s1", [{at:4950, rate:0, html:dim(t.wt)}, {at:11500, rate:18, html:bad(t.revSync1)}, {at:13700, rate:30, html:t.gateOk}]),
-     l2: slot("s2", [{at:5200, rate:22, html:t.tests}, {at:6900, rate:30, html:t.gateRun}, {at:13700, rate:0, html:""}])},
-    {name:"reviewer", at:9100,
-     status:[{at:9100, txt:t.review, c:"r"}, {at:13500, txt:t.done_, c:"d"}],
-     l1: slot("r1", [{at:9300, rate:22, html:t.reviewing}, {at:11300, rate:22, html:ok(t.revCache)}]),
-     l2: slot("r2", [{at:9800, rate:22, html:t.gatefiles}, {at:11700, rate:18, html:bad(t.revSync1)}, {at:13500, rate:22, html:ok(t.revSync2)}])}
+     status:[{at:4800, txt:t.working, c:"w"}, {at:10100, txt:t.done_, c:"d"}],
+     l1: slot("s1", [{at:4950, rate:0, html:dim(t.wt)}, {at:10100, rate:30, html:t.gateOk}]),
+     l2: slot("s2", [{at:5200, rate:22, html:t.tests}, {at:6900, rate:30, html:t.gateRun}, {at:10100, rate:0, html:""}])}
   ];
   return {ngisa, panes};
 }

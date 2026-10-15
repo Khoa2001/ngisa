@@ -2,19 +2,19 @@
 
 English | [Tiếng Việt](README.vi.md)
 
-**Run several Claude Code agents in parallel on one repo. They write, test and review. Only you merge.**
+**Run several Claude Code agents in parallel on one repo. They write and test. You review and merge.**
 
-NGISA (*NGƯỜI GIÁM SÁT*, "the supervisor") is one Claude Code session per repo that plans a task, hands the pieces to worker agents, has every branch reviewed, and stops at a draft PR for you.
+NGISA (*NGƯỜI GIÁM SÁT*, "the supervisor") is one Claude Code session per repo that plans a task, hands the pieces to worker agents, checks that the gate was not touched, and stops at a draft PR for you.
 
-![NGISA plans a task, two workers build it in their own worktrees, a reviewer approves, you merge](docs/assets/ngisa-demo.gif)
+![NGISA plans a task, two workers build it in their own worktrees, a gate check passes, you merge](docs/assets/ngisa-demo.gif)
 
 *Illustrative mock-up, not a recording. The same layout as a real WezTerm tab.*
 
 ## What you get
 
 - **Parallel, not chaotic.** Up to 3 workers per repo, each in its own git worktree, each on its own task.
-- **A gate the workers cannot fake.** Every worker runs the repo's own `tool/setup.sh` and must pass `tool/ci_local.sh`. A reviewer checks that the gate files were not touched. Flutter, Composer PHP and plain PHP repos get a gate generated for them.
-- **You stay in charge.** You approve the plan. Workers cannot push. Only you merge to `main`.
+- **A gate the workers cannot fake.** Every worker runs the repo's own `tool/setup.sh` and must pass `tool/ci_local.sh`. `gate-check`, a script, checks that the gate files and lint config were not touched. Flutter, Composer PHP and plain PHP repos get a gate generated for them.
+- **You stay in charge.** You approve the plan and read the diff. Workers cannot push. Only you merge to `main`.
 
 ## Try it
 
@@ -50,4 +50,4 @@ Done? `rm -rf ~/lab/<your-repo>`, or fetch a branch from it into the real repo.
 
 ## Status
 
-Experimental. Each run is logged (time, interventions, BLOCKs, cost) under [`docs/runs/`](docs/runs/) as research data, from the "hand-off" project: can an agent system ship production-quality software from a spec, and where must a human stay in the loop?
+Experimental. Each run is logged (time, interventions, gate-check FAILs, cost) under [`docs/runs/`](docs/runs/) as research data, from the "hand-off" project: can an agent system ship production-quality software from a spec, and where must a human stay in the loop?

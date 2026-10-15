@@ -5,9 +5,9 @@ Docs from the "hand-off" project: can an agent system ship production software f
 `.vi.md` / `.vi.html` files are Vietnamese versions of the English file with the same name.
 
 ## orchestration/
-- `one-terminal-orchestrator.md` (+ `.vi.md`): the main design. One WezTerm window, one NGISA per repo, implementer and reviewer agents in worktrees, hooks, human gates, Max plan limits. Section 2a = `agents/*.md`, 2c = `orchestrating.md`, 2d = `settings.local.json`.
+- `one-terminal-orchestrator.md` (+ `.vi.md`): the main design. One WezTerm window, one NGISA per repo, implementer agents in worktrees, hooks, human gates, Max plan limits. Section 2a = `agents/*.md`, 2c = `orchestrating.md`, 2d = `settings.local.json`.
 - `lab-setup.md`: try the orchestrator in a lab copy (`~/lab/<repo>`) without touching global config; defines this kit and `make-lab`.
-- `lab-quickstart.md`: copy-paste version of the lab setup, including the nine `~/bin` scripts (agent-init, repo-tab, agent-wall.sh, agent-view, ngisa-statusline, worktree-include, make-lab, agent-pr, caveman-ultra-hook).
+- `lab-quickstart.md`: copy-paste version of the lab setup, including the ten `~/bin` scripts (agent-init, repo-tab, agent-wall.sh, agent-view, ngisa-statusline, worktree-include, make-lab, agent-pr, caveman-ultra-hook, gate-check).
 
 ## verification/
 - `cut-verification-time.md` (+ `.vi.md`): cutting the time you spend checking agent output: enforcing hooks, definition of done as commands, gating the plan instead of the diff, CI as second reviewer, what stays human.
@@ -24,7 +24,7 @@ Docs from the "hand-off" project: can an agent system ship production software f
 ## Repo files at a glance
 | Path | What |
 |---|---|
-| `agents/implementer.md`, `agents/reviewer.md` | Agent definitions |
+| `agents/implementer.md` | Agent definition |
 | `orchestrating.md` | NGISA rules, copied to `CLAUDE.local.md` in a lab clone |
 | `settings.local.json` | Permission allow and deny list (push and publish are denied) |
 | `CONTEXT.md` | Goals, hypotheses, decisions so far, open items. Start here |

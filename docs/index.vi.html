@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>NGISA - nhiều agent Claude Code song song</title>
-<meta name="description" content="Chạy nhiều agent Claude Code song song trên một repo. Chúng viết code, test và review. Chỉ bạn được merge.">
+<meta name="description" content="Chạy nhiều agent Claude Code song song trên một repo. Chúng viết code và test. Bạn review và merge.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="canonical" href="https://khoa2001.github.io/ngisa/index.vi.html"><link rel="alternate" hreflang="en" href="https://khoa2001.github.io/ngisa/index.html"><link rel="alternate" hreflang="vi" href="https://khoa2001.github.io/ngisa/index.vi.html"><link rel="alternate" hreflang="x-default" href="https://khoa2001.github.io/ngisa/index.html">
 <link rel="stylesheet" href="assets/site.css">
@@ -44,12 +44,12 @@
 .flow b{display:block;font-family:var(--display);font-size:19px}
 .flow span{color:var(--muted);font-size:15px}
 .flow li[data-o=gate] b{color:var(--gate)}.flow li[data-o=agent] b{color:var(--agent)}
-.flow li[data-o=review] b{color:var(--review)}.flow li[data-o=human] b{color:var(--human)}
+.flow li[data-o=human] b{color:var(--human)}
 @media (min-width:900px){
  .flow{grid-template-columns:repeat(6,minmax(0,1fr));gap:0 20px;border-top:0}
  .flow li{display:block;border-top:3px solid var(--line);padding-top:14px;position:relative}
  .flow li[data-o=gate]{border-top-color:var(--gate)}.flow li[data-o=agent]{border-top-color:var(--agent)}
- .flow li[data-o=review]{border-top-color:var(--review)}.flow li[data-o=human]{border-top-color:var(--human)}
+.flow li[data-o=human]{border-top-color:var(--human)}
  .flow li::before{display:block;margin-bottom:6px;padding:0}
 }
 .steps{list-style:none;margin:0;padding:0;counter-reset:s}
@@ -84,22 +84,22 @@ details ul{margin:12px 0 0;padding-left:20px;color:var(--muted);max-width:70ch}d
 <div class="hero-text">
 <h1 id="h1"><span>Nhiều agent.</span> <span>Một repo.</span> <span><b class="hy">Bạn</b> merge.</span></h1>
 <div>
-<p class="sub">NGISA (<i>NGƯỜI GIÁM SÁT</i>) lên plan cho task, giao từng phần cho các worker Claude Code, cho review mọi nhánh, rồi dừng ở draft PR để bạn quyết định.</p>
+<p class="sub">NGISA (<i>NGƯỜI GIÁM SÁT</i>) lên plan cho task, giao từng phần cho các worker Claude Code, kiểm tra gate không bị đụng, rồi dừng ở draft PR để bạn quyết định.</p>
 <div class="cta"><a class="btn primary" href="#try">Dùng thử</a><a class="btn" href="diagrams/ngisa-and-agent-wall.vi.html">Xem luồng</a></div>
 <p class="stacks">Chạy được với repo Flutter, Composer PHP và PHP thuần.</p>
 </div>
 </div>
 <div class="demo-wrap">
-<div class="demo" id="demo"><iframe id="demo-frame" src="diagrams/ngisa-demo.html?embed=1&amp;lang=vi" title="Demo NGISA: một task được lên plan, hai worker làm, reviewer duyệt, rồi chờ bạn merge" loading="eager" tabindex="-1"></iframe><noscript><img src="assets/ngisa-demo.vi.gif" alt="Demo NGISA: một task được lên plan, hai worker làm, reviewer duyệt, rồi chờ bạn merge"></noscript></div>
+<div class="demo" id="demo"><iframe id="demo-frame" src="diagrams/ngisa-demo.html?embed=1&amp;lang=vi" title="Demo NGISA: một task được lên plan, hai worker làm, được kiểm tra, rồi chờ bạn merge" loading="eager" tabindex="-1"></iframe><noscript><img src="assets/ngisa-demo.vi.gif" alt="Demo NGISA: một task được lên plan, hai worker làm, được kiểm tra, rồi chờ bạn merge"></noscript></div>
 <div class="demo-ctl"><button type="button" id="demo-toggle" data-pause="Tạm dừng demo" data-play="Chạy demo">Tạm dừng demo</button><span>Ảnh minh họa, không phải bản ghi thật.</span></div>
 </div>
 </section>
 
 <section aria-labelledby="get"><h2 id="get">Bạn được gì</h2>
-<ul class="promises"><li><b class="w1">Song song</b><span>Tối đa 3 worker mỗi repo, mỗi worker có git worktree riêng và một task riêng.</span></li><li><b class="w2">Có gate</b><span>Mỗi worker chạy <code>tool/setup.sh</code> của chính repo và phải qua <code>tool/ci_local.sh</code>. Reviewer kiểm tra file gate không bị sửa. Repo Flutter, Composer PHP và PHP thuần được tạo sẵn gate.</span></li><li><b class="w3">Của bạn</b><span>Bạn duyệt plan. Worker không push được. Chỉ bạn merge vào <code>main</code>.</span></li></ul></section>
+<ul class="promises"><li><b class="w1">Song song</b><span>Tối đa 3 worker mỗi repo, mỗi worker có git worktree riêng và một task riêng.</span></li><li><b class="w2">Có gate</b><span>Mỗi worker chạy <code>tool/setup.sh</code> của chính repo và phải qua <code>tool/ci_local.sh</code>. Một script (<code>gate-check</code>) kiểm tra file gate và cấu hình lint không bị sửa. Repo Flutter, Composer PHP và PHP thuần được tạo sẵn gate.</span></li><li><b class="w3">Của bạn</b><span>Bạn duyệt plan. Worker không push được. Chỉ bạn merge vào <code>main</code>.</span></li></ul></section>
 
 <section aria-labelledby="flow"><h2 id="flow">Từ ý tưởng đến merge</h2>
-<ol class="flow"><li data-o="human"><div><b>Ý tưởng</b><span>Bạn gõ task cho NGISA.</span></div></li><li data-o="gate"><div><b>Plan</b><span>NGISA viết spec và plan. Bạn duyệt cả hai.</span></div></li><li data-o="agent"><div><b>Worker</b><span>Tối đa 3, mỗi worker một worktree, viết test trước.</span></div></li><li data-o="agent"><div><b>Gate</b><span><code>tool/ci_local.sh</code> phải exit 0.</span></div></li><li data-o="review"><div><b>Review</b><span>APPROVE, hoặc BLOCK quay lại đúng worker đó. Tối đa 2 vòng.</span></div></li><li data-o="human"><div><b>Bạn merge</b><span>Draft PR và CI. Chỉ bạn merge vào <code>main</code>.</span></div></li></ol>
+<ol class="flow"><li data-o="human"><div><b>Ý tưởng</b><span>Bạn gõ task cho NGISA.</span></div></li><li data-o="gate"><div><b>Plan</b><span>NGISA viết spec và plan. Bạn duyệt cả hai.</span></div></li><li data-o="agent"><div><b>Worker</b><span>Tối đa 3, mỗi worker một worktree, viết test trước.</span></div></li><li data-o="agent"><div><b>Gate</b><span><code>tool/ci_local.sh</code> phải exit 0.</span></div></li><li data-o="gate"><div><b>Kiểm tra</b><span><code>gate-check</code> xác nhận gate không bị đụng, rồi các nhánh được gộp.</span></div></li><li data-o="human"><div><b>Bạn merge</b><span>Draft PR và CI. Chỉ bạn merge vào <code>main</code>.</span></div></li></ol>
 <a href="diagrams/ngisa-and-agent-wall.vi.html">Sơ đồ đầy đủ &rarr;</a></section>
 
 <section id="try" aria-labelledby="tryh"><h2 id="tryh">Dùng thử</h2>
