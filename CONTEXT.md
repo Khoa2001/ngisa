@@ -51,7 +51,7 @@ Hypotheses to test:
 - Approved branches merge into a local feature branch, `ci_local.sh` runs, and a draft PR opens. Only the human merges to main (a hook enforces it).
 - Never run in bypass-permissions mode: agent reports to the NGISA then get held for approval. Use auto mode.
 - More tasks than slots: the NGISA starts 3 and queues the rest. `agent-wall.sh` refuses a 4th with "tab full".
-- The NGISA tends to code itself when a fix looks tiny. `ngisa-settings.json` (passed by `repo-tab` with `--settings`, NGISA only) denies Edit/Write on `lib/`, `test/`, `android/` and `ios/`. Known gap: shell edits such as `sed -i`. Log any NGISA edit as an intervention.
+- The NGISA tends to code itself when a fix looks tiny. `ngisa-settings.json` (passed by `repo-tab` with `--settings`, NGISA only) denies Edit (covers Write) on `lib/`, `test/`, `android/` and `ios/`. Known gap: shell edits such as `sed -i`. Log any NGISA edit as an intervention.
 - Setup is once per machine (agents, rules, hooks, `~/bin` scripts). Per repo it is only 3 files, created by `agent-init`: `tool/ci_local.sh`, `.worktreeinclude`, and a `.gitignore` line.
 
 ### NGISA (2026-10-14)
@@ -64,7 +64,7 @@ Hypotheses to test:
 - The implementer prompt names no tool. It runs `tool/setup.sh` and gates on `tool/ci_local.sh`, both owned by the repo and written once by `agent-init` from the detected stack (Flutter via `pubspec.yaml`/`melos.yaml`, PHP via `composer.json`). A root manifest wins, else one level down, so a Flutter app plus a PHP backend get one gate. No manifest: nothing is written and `agent-init` says so.
 - `agent-init` also writes `.worktreeinclude` (per stack secrets) and `.claude/ngisa-settings.json` (edit deny for the code dirs that exist). `repo-tab` prefers that file and falls back to the kit's Flutter `ngisa-settings.json`. `make-lab` copies the secrets listed in `.worktreeinclude`.
 - Each task from the NGISA carries paths, stack and test command; the worker uses them first and the repo files as fallback. Non-command conventions go in the repo's `CLAUDE.md`.
-- Gate integrity: `settings.local.json` denies Edit/Write on `tool/setup.sh` and `tool/ci_local.sh`; the reviewer BLOCKs a worktree whose copy differs from the main checkout, or weakened tests and lint. Known gap: shell edits. The implementer must report a failing or unrunnable gate, not fake green.
+- Gate integrity: `settings.local.json` denies Edit (covers Write) on `tool/setup.sh` and `tool/ci_local.sh`; the reviewer BLOCKs a worktree whose copy differs from the main checkout, or weakened tests and lint. Known gap: shell edits. The implementer must report a failing or unrunnable gate, not fake green.
 - Not yet run against a real PHP repo (busy-bees backend). The generated PHP gate is a guess at pint, php-cs-fixer, phpstan and phpunit: review it against the repo's CI.
 
 ### Max plan limits

@@ -12,7 +12,7 @@
     "deny": [
       "Bash(git push:*)", "Bash(flutter pub publish:*)", "Bash(dart pub publish:*)",
       "Bash(fastlane:*)", "Bash(firebase deploy:*)",
-      "Edit(tool/ci_local.sh)", "Write(tool/ci_local.sh)", "Edit(tool/setup.sh)", "Write(tool/setup.sh)"
+      "Edit(tool/ci_local.sh)", "Edit(tool/setup.sh)"
     ]
   },
   "hooks": {

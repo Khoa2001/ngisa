@@ -97,7 +97,7 @@ cat > $KIT/settings.local.json <<'EOF'
     "deny": [
       "Bash(git push:*)", "Bash(flutter pub publish:*)", "Bash(dart pub publish:*)",
       "Bash(fastlane:*)", "Bash(firebase deploy:*)",
-      "Edit(tool/ci_local.sh)", "Write(tool/ci_local.sh)", "Edit(tool/setup.sh)", "Write(tool/setup.sh)"
+      "Edit(tool/ci_local.sh)", "Edit(tool/setup.sh)"
     ]
   },
   "hooks": {
@@ -114,9 +114,8 @@ cat > $KIT/ngisa-settings.json <<'EOF'
 {
   "permissions": {
     "deny": [
-      "Edit(lib/**)", "Write(lib/**)", "Edit(test/**)", "Write(test/**)",
-      "Edit(integration_test/**)", "Write(integration_test/**)",
-      "Edit(android/**)", "Write(android/**)", "Edit(ios/**)", "Write(ios/**)"
+      "Edit(lib/**)", "Edit(test/**)", "Edit(integration_test/**)",
+      "Edit(android/**)", "Edit(ios/**)"
     ]
   }
 }
@@ -237,7 +236,7 @@ mk tool/setup.sh "$setup_body"
 mk tool/ci_local.sh "$ci_body"
 [[ -f .worktreeinclude ]] || printf '%s\n' "$wi" | awk 'NF && !seen[$0]++' > .worktreeinclude
 # no code dirs found: write nothing, repo-tab then falls back to the kit's ngisa-settings.json
-if [[ ! -f .claude/ngisa-settings.json && -n $deny ]]; then printf '%s' "$deny" | jq -R -s '(split("\n") | map(select(length>0)) | map(["Edit(\(.)/**)","Write(\(.)/**)"]) | add // []) as $d | {permissions: {deny: $d}}' > .claude/ngisa-settings.json; fi
+if [[ ! -f .claude/ngisa-settings.json && -n $deny ]]; then printf '%s' "$deny" | jq -R -s '(split("\n") | map(select(length>0)) | map(["Edit(\(.)/**)"]) | add // []) as $d | {permissions: {deny: $d}}' > .claude/ngisa-settings.json; fi
 echo "done: review tool/setup.sh, tool/ci_local.sh and .worktreeinclude (secrets), then commit"
 EOF
 
@@ -370,7 +369,7 @@ The implementer prompt names no tool. It runs two files the repo owns, and `agen
 - No manifest found (another stack): it writes no setup or gate and says so. Write both by hand; nothing else changes.
 - Put stack conventions that are not commands (for example "run migrations on the test DB before phpunit") in the repo's `CLAUDE.md`. Workers read it.
 - Each task the NGISA hands out lists its paths, stack and test command; the worker uses those first and the repo files as the fallback.
-- Gate integrity: `settings.local.json` denies Edit/Write on `tool/setup.sh` and `tool/ci_local.sh` (change them by hand), and the reviewer BLOCKs if a worktree's copy differs from the main checkout or if checks were weakened. Known gap: shell edits such as `sed -i`.
+- Gate integrity: `settings.local.json` denies Edit on `tool/setup.sh` and `tool/ci_local.sh` (change them by hand), and the reviewer BLOCKs if a worktree's copy differs from the main checkout or if checks were weakened. Known gap: shell edits such as `sed -i`.
 
 ## Step 5. First test (small on purpose)
 
