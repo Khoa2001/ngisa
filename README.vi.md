@@ -2,19 +2,19 @@
 
 [English](README.md) | Tiếng Việt
 
-**Chạy nhiều agent Claude Code song song trên một repo. Chúng viết code, test và review. Chỉ bạn được merge.**
+**Chạy nhiều agent Claude Code song song trên một repo. Chúng viết code và test. Bạn review và merge.**
 
-NGISA (*NGƯỜI GIÁM SÁT*) là một phiên Claude Code cho mỗi repo: lên plan cho task, giao từng phần cho các worker, cho review mọi nhánh, rồi dừng ở draft PR để bạn quyết định.
+NGISA (*NGƯỜI GIÁM SÁT*) là một phiên Claude Code cho mỗi repo: lên plan cho task, giao từng phần cho các worker, kiểm tra gate không bị đụng, rồi dừng ở draft PR để bạn quyết định.
 
-![NGISA lên plan, hai worker làm trong worktree riêng, reviewer duyệt, bạn merge](docs/assets/ngisa-demo.vi.gif)
+![NGISA lên plan, hai worker làm trong worktree riêng, gate-check qua, bạn merge](docs/assets/ngisa-demo.vi.gif)
 
 *Ảnh minh họa, không phải bản ghi thật. Bố cục giống một tab WezTerm thật.*
 
 ## Bạn được gì
 
 - **Song song mà không loạn.** Tối đa 3 worker mỗi repo, mỗi worker có git worktree riêng và một task riêng.
-- **Gate worker không thể làm giả.** Mỗi worker chạy `tool/setup.sh` của chính repo và phải qua `tool/ci_local.sh`. Reviewer kiểm tra file gate không bị sửa. Repo Flutter, Composer PHP và PHP thuần được tạo sẵn gate.
-- **Bạn nắm quyền.** Bạn duyệt plan. Worker không push được. Chỉ bạn merge vào `main`.
+- **Gate worker không thể làm giả.** Mỗi worker chạy `tool/setup.sh` của chính repo và phải qua `tool/ci_local.sh`. `gate-check` (một script) kiểm tra file gate và cấu hình lint không bị sửa. Repo Flutter, Composer PHP và PHP thuần được tạo sẵn gate.
+- **Bạn nắm quyền.** Bạn duyệt plan và đọc diff. Worker không push được. Chỉ bạn merge vào `main`.
 
 ## Dùng thử
 
@@ -50,4 +50,4 @@ Xong thì `rm -rf ~/lab/<your-repo>`, hoặc fetch một nhánh từ lab về re
 
 ## Trạng thái
 
-Thử nghiệm. Mỗi lần chạy được ghi lại (thời gian, can thiệp, BLOCK, chi phí) trong [`docs/runs/`](docs/runs/) làm dữ liệu nghiên cứu, thuộc dự án "hand-off": một hệ agent có giao được phần mềm chất lượng production từ một spec không, và con người phải ở đâu trong vòng lặp?
+Thử nghiệm. Mỗi lần chạy được ghi lại (thời gian, can thiệp, gate-check FAIL, chi phí) trong [`docs/runs/`](docs/runs/) làm dữ liệu nghiên cứu, thuộc dự án "hand-off": một hệ agent có giao được phần mềm chất lượng production từ một spec không, và con người phải ở đâu trong vòng lặp?

@@ -1,5 +1,7 @@
 # Giảm thời gian kiểm tra output của agent (superpowers + Claude Max)
 
+> Ghi chú về kit (2026-10-15): kit NGISA không còn chạy reviewer agent. Bạn tự xem diff, `gate-check` chỉ so sánh file gate và cấu hình lint. Phần tư vấn về review agent bên dưới được giữ lại như tài liệu nghiên cứu.
+
 Kết luận: thời gian của bạn đang đổ vào việc kiểm tra những thứ máy làm được. Superpowers đã *bảo* agent
 phải verify (`verification-before-completion`, các task reviewer trong `subagent-driven-development`),
 nhưng đó chỉ là prompt. Prompt thì agent có thể bỏ qua. Hook và CI thì không.

@@ -7,10 +7,10 @@
 terminal
 
 ## Users
-A solo developer who works on many repos at once, mostly Flutter (managed with fvm), on macOS in WezTerm. They hand a task to the NGISA of one repo, then do other work while background workers (implementer, reviewer) run. They glance at a worker pane to see what it is doing, and step in only when a worker is blocked or a gate fails.
+A solo developer who works on many repos at once, mostly Flutter (managed with fvm), on macOS in WezTerm. They hand a task to the NGISA of one repo, then do other work while background workers (implementer) run. They glance at a worker pane to see what it is doing, and step in only when a worker is blocked or a gate fails.
 
 ## Product Purpose
-NGISA is a kit that lets one orchestrator session per repo run implementer and reviewer workers in isolated worktrees, behind a local gate, so the developer keeps the human floor (intent, taste, risk, irreversible actions) and the agents do the rest. Success: a task goes in, a reviewed branch comes out, and the developer always knows in a few seconds what each worker is doing and whether it needs them. The runs also produce research data (interventions, BLOCKs, cost) logged under `docs/runs/`.
+NGISA is a kit that lets one orchestrator session per repo run implementer workers in isolated worktrees, behind a local gate, so the developer keeps the human floor (intent, taste, risk, irreversible actions) and the agents do the rest. Success: a task goes in, a branch that passed its gate comes out, and the developer always knows in a few seconds what each worker is doing and whether it needs them. The runs also produce research data (interventions, gate-check FAILs, cost) logged under `docs/runs/`.
 
 ## Positioning
 The developer watches workers without being able to disturb them: worker panes are read-only views, answers go through `claude attach <name>`. One NGISA per repo, workers listed in its status line.
