@@ -32,7 +32,7 @@ Xong thì `rm -rf ~/lab/<your-repo>`, hoặc fetch một nhánh từ lab về re
 
 ## Tìm hiểu thêm
 
-- [`docs/diagrams/ngisa-and-agent-wall.vi.html`](docs/diagrams/ngisa-and-agent-wall.vi.html) ([en](docs/diagrams/ngisa-and-agent-wall.html)): bố cục cửa sổ và luồng từ ý tưởng đến merge trên một trang. Mở bằng trình duyệt.
+- [Sơ đồ trực tiếp](https://khoa2001.github.io/ngisa/diagrams/ngisa-and-agent-wall.vi.html) ([en](https://khoa2001.github.io/ngisa/diagrams/ngisa-and-agent-wall.html)): bố cục cửa sổ và luồng từ ý tưởng đến merge trên một trang. Mã nguồn: [`docs/diagrams/`](docs/diagrams/).
 - [`one-terminal-orchestrator.vi.md`](docs/orchestration/one-terminal-orchestrator.vi.md) ([en](docs/orchestration/one-terminal-orchestrator.md)): thiết kế đầy đủ. Vai trò, hook, các điểm người quyết định, giới hạn gói.
 - [`lab-setup.md`](docs/orchestration/lab-setup.md) và [`lab-quickstart.md`](docs/orchestration/lab-quickstart.md) (bản tiếng Anh): thử trong một bản sao dùng xong bỏ, không đụng `~/.claude`.
 - [`docs/README.md`](docs/README.md): mục lục mọi tài liệu, cấu trúc repo và các script.
