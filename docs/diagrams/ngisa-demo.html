@@ -6,12 +6,14 @@
 <!--
   Source of docs/assets/ngisa-demo.gif (and ngisa-demo.vi.gif).
   An illustrative mock, not a recording. Open with ?step=N&lang=en|vi to see one frame.
-  Without ?step it plays the whole loop in the browser.
+  Without ?step it plays the whole loop in the browser. The host page can send
+  {type:"ngisa-demo", action:"pause"|"play"} with postMessage. With prefers-reduced-motion
+  it shows the last frame and waits for "play".
   Regenerate the GIFs with docs/diagrams/render-demo-gif.sh.
 -->
 <style>
 :root{
-  --bg:#0d1117; --win:#141a24; --bar:#1c2330; --line:#2a3140; --fg:#d6dde8; --muted:#7d8799;
+  --bg:#0d1117; --win:#141a24; --bar:#1c2330; --line:#2a3140; --fg:#d6dde8; --muted:#8b95a7;
   --gate:#9d8cff; --agent:#3cc4b2; --review:#e7a447; --human:#ff6b5f; --ok:#4cc68a; --warn:#e7b93e;
   --mono:Menlo, "SF Mono", ui-monospace, Consolas, monospace;
   --sans:-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -36,18 +38,32 @@ html,body{margin:0;width:960px;height:540px;background:var(--bg);overflow:hidden
 .pane.empty{align-items:center;justify-content:center;color:#3b4456}
 .ph{display:flex;align-items:center;gap:8px;color:#fff;font-weight:600}
 .st{font:600 10px var(--sans);padding:1px 8px;border-radius:99px;color:#10141b}
-.st.w{background:var(--agent);color:#fff}.st.r{background:var(--review);color:#10141b}.st.d{background:var(--ok)}.st.n{background:var(--warn)}
+.st.w{background:var(--agent);color:#10141b}.st.r{background:var(--review);color:#10141b}.st.d{background:var(--ok)}.st.n{background:var(--warn)}
 .dim{color:var(--muted)}
 .cap{position:absolute;left:20px;right:20px;top:482px;height:44px;display:flex;align-items:center;gap:12px;color:#fff;font-size:17px;font-weight:600}
-.cap .n{flex:none;width:28px;height:28px;border-radius:50%;background:var(--gate);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px}
-.cap.human .n{background:var(--human)}
+.cap .n{flex:none;width:28px;height:28px;border-radius:50%;background:var(--gate);color:#10141b;display:flex;align-items:center;justify-content:center;font-size:14px}
+.cap.human .n{background:var(--human);color:#10141b}
 .cap small{margin-left:auto;font-weight:400;font-size:12px;color:var(--muted)}
+
+/* Embed mode (?embed=1): fluid layout for the website, sized by postMessage. Frames for the GIFs never use it. */
+html.emb,html.emb body{width:auto;height:auto;overflow:visible}
+html.emb .win{position:static;width:auto;height:auto;border:0;border-radius:0}
+html.emb .cap{position:static;height:auto;padding:14px 18px}
+html.emb .body{min-height:320px}
+html.emb .st{font-size:11px}
+html.emb .pane{font-size:12.5px}
+@media (max-width:640px){
+  html.emb .body{grid-template-columns:1fr;min-height:0}
+  html.emb .ngisa{min-height:290px}
+  html.emb .stack{grid-template-rows:repeat(3,minmax(84px,auto))}
+  html.emb .cap{font-size:15px}
+}
 </style>
 </head>
 <body>
 <div class="win">
   <div class="bar"><span class="dots"><i></i><i></i><i></i></span>WezTerm</div>
-  <div class="tabs"><span class="on">my-app</span><span>other-repo</span></div>
+  <div class="tabs"><span class="on">shelfie</span><span>atlas-api</span></div>
   <div class="body">
     <div class="ngisa" id="ngisa"></div>
     <div class="stack" id="stack"></div>
@@ -58,7 +74,7 @@ html,body{margin:0;width:960px;height:540px;background:var(--bg);overflow:hidden
 <script>
 const T = {
   en: {
-    task: "add offline mode to the app",
+    task: "add offline mode to shelfie",
     plan: "Plan: 2 tasks (cache, sync). <span class=hl>Approve?</span>",
     go: "go",
     spawned: "Spawned cache, sync",
@@ -90,15 +106,15 @@ const T = {
     note: "illustrative"
   },
   vi: {
-    task: "add offline mode to the app",
+    task: "thêm chế độ offline cho shelfie",
     plan: "Plan: 2 task (cache, sync). <span class=hl>Duyệt?</span>",
     go: "go",
-    spawned: "Đã chạy cache, sync",
+    spawned: "Đã tạo agent cache, sync",
     cacheOk: "cache <span class=ok>APPROVE</span>",
     syncBlock: "sync <span class=bad>BLOCK</span> (vòng 1): thiếu test retry",
     syncOk: "sync <span class=ok>APPROVE</span> (vòng 2)",
     done: "Nhánh feature đã gộp, CI xanh. Draft PR sẵn sàng. <span class=hl>Bạn merge.</span>",
-    working: "Đang làm", fixing: "Đang sửa", done_: "Xong", review: "Đang review",
+    working: "Đang chạy", fixing: "Đang sửa", done_: "Xong", review: "Đang review",
     wt: "git worktree riêng",
     tests: "viết test fail, làm cho pass",
     gateRun: "./tool/ci_local.sh ...",
@@ -141,46 +157,61 @@ function render(step, lang){
   if(step>=6) n.push(`<div class="cl">${t.cacheOk}</div><div class="cl">${t.syncBlock}</div>`);
   if(step>=7) n.push(`<div class="cl">${t.syncOk}</div>`);
   if(step>=8) n.push(`<div class="cl">${t.done}</div>`);
-  document.getElementById("ngisa").innerHTML = `<div class="who">NGISA - my-app - Opus</div>` + n.join("");
+  document.getElementById("ngisa").innerHTML = `<div class="who">NGISA - shelfie - Opus</div>` + n.join("");
 
   let p1 = emptyPane, p2 = emptyPane, p3 = emptyPane;
   if(step>=3){
-    p1 = pane("my-app-cache","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.tests]);
-    p2 = pane("my-app-sync","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.tests]);
+    p1 = pane("shelfie-cache","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.tests]);
+    p2 = pane("shelfie-sync","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.tests]);
   }
   if(step>=4){
-    p1 = pane("my-app-cache","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.gateRun]);
-    p2 = pane("my-app-sync","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.gateRun]);
+    p1 = pane("shelfie-cache","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.gateRun]);
+    p2 = pane("shelfie-sync","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.gateRun]);
   }
   if(step>=5){
-    p1 = pane("my-app-cache","", t.done_,"d",[t.gateOk]);
-    p2 = pane("my-app-sync","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.gateRun]);
+    p1 = pane("shelfie-cache","", t.done_,"d",[t.gateOk]);
+    p2 = pane("shelfie-sync","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.gateRun]);
     p3 = pane("reviewer","", t.review,"r",[t.reviewing, t.gatefiles]);
   }
   if(step>=6){
-    p1 = pane("my-app-cache","", t.done_,"d",[t.gateOk]);
-    p2 = pane("my-app-sync","", t.fixing,"n",[`<span class=bad>${t.revSync1}</span>`, t.gateRun]);
+    p1 = pane("shelfie-cache","", t.done_,"d",[t.gateOk]);
+    p2 = pane("shelfie-sync","", t.fixing,"n",[`<span class=bad>${t.revSync1}</span>`, t.gateRun]);
     p3 = pane("reviewer","", t.review,"r",[`<span class=ok>${t.revCache}</span>`, `<span class=bad>${t.revSync1}</span>`]);
   }
   if(step>=7){
-    p2 = pane("my-app-sync","", t.done_,"d",[t.gateOk]);
+    p2 = pane("shelfie-sync","", t.done_,"d",[t.gateOk]);
     p3 = pane("reviewer","", t.done_,"d",[`<span class=ok>${t.revCache}</span>`, `<span class=ok>${t.revSync2}</span>`]);
   }
   document.getElementById("stack").innerHTML = p1+p2+p3;
 
   const cap = document.getElementById("cap");
   cap.className = "cap" + (step===8 ? " human" : "");
+  if(q.has("embed")) parent.postMessage({type:"ngisa-demo-step", step}, "*");
   cap.innerHTML = `<span class="n">${step+1}</span><span>${t.caps[step]}</span><small>${t.note}</small>`;
 }
 
 const q = new URLSearchParams(location.search);
 const lang = q.get("lang") === "vi" ? "vi" : "en";
 document.documentElement.lang = lang;
+if(q.has("embed")){
+  document.documentElement.classList.add("emb");
+  const post = () => parent.postMessage({type:"ngisa-demo-size", h:document.body.getBoundingClientRect().height}, "*");
+  new ResizeObserver(post).observe(document.body);
+  addEventListener("load", post);
+}
 if(q.has("step")){
   render(Number(q.get("step")), lang);
 } else {
-  let i = 0;
-  (function tick(){ render(i, lang); const d = DURATIONS[i]; i = (i+1) % DURATIONS.length; setTimeout(tick, d); })();
+  let i = 0, timer = null;
+  let paused = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function tick(){ render(i, lang); const d = DURATIONS[i]; i = (i+1) % DURATIONS.length; timer = setTimeout(tick, d); }
+  if(paused){ render(DURATIONS.length - 1, lang); } else { tick(); }
+  addEventListener("message", e => {
+    const m = e.data;
+    if(!m || m.type !== "ngisa-demo") return;
+    if(m.action === "pause"){ paused = true; clearTimeout(timer); }
+    else if(m.action === "play" && paused){ paused = false; tick(); }
+  });
 }
 </script>
 </body>
