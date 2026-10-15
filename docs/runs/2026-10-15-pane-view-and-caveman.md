@@ -110,3 +110,14 @@ From a busy-bees screenshot: worker panes showed an input box, the NGISA answere
 
 ### Not tested
 - A real task with three real workers and the user's window size.
+
+## Follow-up: status-only panes (2026-10-15)
+- First real run with three workers and their reviewers (`util-media`, `util-text-date`, `util-color-money`): equal rows, reviewer panes beside their implementers, and BLOCK then APPROVED rounds (`-review`, `-review2`) all worked. The user then asked for the panes to be as simple as possible: only whether a worker is working or done, shown directly, with no detail about what it is doing.
+- Decision: the worker still reports to the NGISA (it needs the branch, commit and verdict to start the reviewer, send BLOCK findings back and build the table); only the pane stops showing anything about it. The reviewer round limit stays as written in `orchestrating.md` ("Max 2 rounds, then ask me"): a prompt rule, not code, and the NGISA read it as review plus `-review2`.
+- `agent-view` default is now status only: name (repo prefix dropped) and `working` / `needs you` / `done` + time, one dim line (branch, or `reviewing <task>`), and one result line (commit and subject, or `N findings`). Reviewers show `reviewing`, then `APPROVED` (green) or `BLOCK` (red). Extra lines only when they matter: `quiet for Nm` after 2 minutes without a move, `waiting` + `claude attach` when blocked, and a red `the NGISA did not get the result` when the report failed. `AGENT_VIEW_DETAIL=1` restores the full view (phases, counters, `now`, log).
+
+### Checked
+- Real finished workers (implementers, `-review`, `-review2`) at 44 and 70 columns, rendered to an image the user saw before building the last step (repo prefix dropped). Synthetic transcripts for working, quiet 5 minutes, undelivered report and blocked. The detail view still renders with the flag. Quickstart block equals `~/bin/agent-view`.
+
+### Not tested
+- A live `working` worker over a whole task, and the panes after the equal-height resize.
