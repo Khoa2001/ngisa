@@ -176,7 +176,7 @@ Trong `~/.claude/settings.json`, thêm vào hook format + Stop gate của playbo
 
 - Không có tab `overview` riêng. Cần xem hết thì chạy `claude agents` ở một tab trống: mọi agent của mọi repo. `Ctrl+S` gom theo repo. `Space` xem nhanh, `Enter` vào hẳn, `←` thoát ra. Dòng vàng = đang chờ bạn.
 - Mỗi tab repo: NGISA bên trái, tối đa 3 pane agent bên phải.
-- Pane chỉ để **xem**, không có ô nhập (`agent-view`: dòng đầu có trạng thái, model, worktree và branch, bên dưới là transcript của worker). Muốn trả lời worker đang `needs you` thì chạy `claude attach <name>` ở một pane trống. Đóng pane **không** dừng agent.
+- Pane chỉ để **xem**, không có ô nhập (`agent-view`: dòng đầu có trạng thái, model, branch và worktree; thanh phase; bộ đếm thời gian, số file đổi, commit và dòng gate cuối; luồng hoạt động viết bằng lời thường). Status line của NGISA có thêm dòng `workers` liệt kê worker (`ngisa-statusline`, `repo-tab` tự gắn vào). Muốn trả lời worker đang `needs you` thì chạy `claude attach <name>` ở một pane trống. Đóng pane **không** dừng agent.
 
 ### Vì sao mỗi repo một NGISA, không phải một NGISA chung
 
