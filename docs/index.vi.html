@@ -3,57 +3,144 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NGISA</title>
+<title>NGISA - nhiều agent Claude Code song song</title>
 <meta name="description" content="Chạy nhiều agent Claude Code song song trên một repo. Chúng viết code, test và review. Chỉ bạn được merge.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="canonical" href="https://khoa2001.github.io/ngisa/index.vi.html"><link rel="alternate" hreflang="en" href="https://khoa2001.github.io/ngisa/index.html"><link rel="alternate" hreflang="vi" href="https://khoa2001.github.io/ngisa/index.vi.html"><link rel="alternate" hreflang="x-default" href="https://khoa2001.github.io/ngisa/index.html">
+<link rel="stylesheet" href="assets/site.css">
+<noscript><style>.demo iframe,#demo-toggle{display:none}</style></noscript>
 <style>
-:root{--bg:#f3f5f8;--surface:#fff;--fg:#18202c;--muted:#5b6678;--line:#d5dbe5;--gate:#5b45d6}
-@media (prefers-color-scheme:dark){:root{--bg:#10141b;--surface:#19202b;--fg:#e6ebf2;--muted:#9aa5b6;--line:#2a3140;--gate:#9d8cff}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
-main{max-width:860px;margin:0 auto;padding:40px 16px 56px;display:flex;flex-direction:column;gap:28px}
-h1{margin:0;font-size:clamp(32px,6vw,48px);line-height:1.1}
-h2{margin:0 0 10px;font-size:18px}
-p{margin:0;max-width:65ch}
-.lang{font-size:14px;color:var(--muted)}
-a{color:var(--gate)}
-.lead{font-size:18px}
-.sub{color:var(--muted);margin-top:6px}
-img{width:100%;height:auto;border:1px solid var(--line);border-radius:10px;display:block}
-.note{font-size:13px;color:var(--muted);margin-top:6px}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px}
-.cards a{display:block;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;text-decoration:none;color:var(--fg)}
-.cards b{display:block;color:var(--gate)}
-.cards span{font-size:14px;color:var(--muted)}
-code{font:.9em Menlo,ui-monospace,monospace}
+.hero{display:grid;gap:40px}
+.hero-text{display:grid;gap:20px 56px;align-items:end}
+@media (min-width:960px){.hero-text{grid-template-columns:minmax(0,7fr) minmax(0,5fr)}}
+.hero h1{font-size:clamp(40px,5.4vw,68px);letter-spacing:-.025em}
+.hero h1 span{display:inline-block}
+.hero h1 .hy{color:var(--human)}
+.hero .sub{font-size:18px;color:var(--muted);max-width:46ch}
+.cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px}
+.hero .stacks{margin-top:16px;font-size:14px;color:var(--muted)}
+.demo-wrap{min-width:0}
+.demo{border-radius:14px;overflow:hidden;border:1px solid var(--termline);background:#0d1117;color:#d6dde8}
+.demo iframe{display:block;width:100%;height:440px;border:0}
+@media (max-width:640px){.demo iframe{height:680px}}
+.demo img{display:block;width:100%;height:auto}
+.demo-ctl{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-top:10px;font-size:13px;color:var(--muted)}
+.demo-ctl button{min-height:40px;white-space:nowrap;font:600 13px var(--body);color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:8px;padding:5px 12px;cursor:pointer}
+.demo-ctl button:hover{border-color:var(--muted)}
+.promises{list-style:none;margin:0;padding:0}
+.promises li{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:8px 40px;align-items:baseline;padding:22px 0;border-top:1px solid var(--line)}
+.promises li:last-child{border-bottom:1px solid var(--line)}
+.promises b{font:600 clamp(28px,4vw,44px)/1.05 var(--display);letter-spacing:-.02em}
+.promises .w1{color:var(--agent)}.promises .w2{color:var(--gate)}.promises .w3{color:var(--human)}
+.promises span{color:var(--muted);font-size:17px;max-width:58ch}
+.promises code{color:var(--fg)}
+@media (max-width:640px){.promises li{grid-template-columns:minmax(0,1fr)}}
+.flow{list-style:none;margin:0 0 18px;padding:0;display:grid;gap:0;counter-reset:f}
+.flow li{counter-increment:f;display:grid;grid-template-columns:34px 1fr;gap:0 10px;padding:12px 0;position:relative;isolation:isolate;border-top:1px solid var(--line)}
+.flow li::before{content:counter(f);font:600 14px var(--mono);color:var(--muted);padding-top:2px}
+.flow div{min-width:0}
+.flow li::after{content:"";position:absolute;inset:0 -8px;z-index:-1;border-radius:6px;background:color-mix(in srgb,var(--fg) 8%,transparent);opacity:0;transition:opacity .3s}
+.flow li.on::after{opacity:1}
+.flow b{display:block;font-family:var(--display);font-size:19px}
+.flow span{color:var(--muted);font-size:15px}
+.flow li[data-o=gate] b{color:var(--gate)}.flow li[data-o=agent] b{color:var(--agent)}
+.flow li[data-o=review] b{color:var(--review)}.flow li[data-o=human] b{color:var(--human)}
+@media (min-width:900px){
+ .flow{grid-template-columns:repeat(6,minmax(0,1fr));gap:0 20px;border-top:0}
+ .flow li{display:block;border-top:3px solid var(--line);padding-top:14px;position:relative}
+ .flow li[data-o=gate]{border-top-color:var(--gate)}.flow li[data-o=agent]{border-top-color:var(--agent)}
+ .flow li[data-o=review]{border-top-color:var(--review)}.flow li[data-o=human]{border-top-color:var(--human)}
+ .flow li::before{display:block;margin-bottom:6px;padding:0}
+}
+.steps{list-style:none;margin:0;padding:0;counter-reset:s}
+.steps>li{counter-increment:s;display:grid;grid-template-columns:minmax(40px,64px) minmax(0,1fr);gap:0 8px;padding:22px 0;border-top:1px solid var(--line)}
+.steps>li:last-child{border-bottom:1px solid var(--line)}
+.steps>li::before{content:counter(s);font:700 40px/1 var(--display);color:var(--gate)}
+.steps h3{margin-bottom:6px}
+.steps p{color:var(--muted);margin-bottom:12px}.steps .term{margin-top:10px}
+.prereq{margin-top:18px;font-size:14px;color:var(--muted)}
+.more{list-style:none;margin:0;padding:0}
+.more li{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:4px 32px;padding:14px 0;border-top:1px solid var(--line)}
+.more li:last-child{border-bottom:1px solid var(--line)}
+.more a{font-size:18px;text-decoration:none}.more a:hover b{text-decoration:underline}
+.more b{font-family:var(--display);font-weight:600}
+.more span{color:var(--muted)}
+@media (max-width:640px){.more li{grid-template-columns:minmax(0,1fr)}}
+details{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:14px 0}
+summary{cursor:pointer;font:600 18px var(--display)}
+details ul{margin:12px 0 0;padding-left:20px;color:var(--muted);max-width:70ch}details li{margin-bottom:8px}
 </style>
 </head>
 <body>
-<main>
-<header>
-<div class="lang"><a href="index.html">English</a> | Tiếng Việt</div>
-<h1>NGISA</h1>
-<p class="lead">Chạy nhiều agent Claude Code song song trên một repo. Chúng viết code, test và review. Chỉ bạn được merge.</p>
-<p class="sub">NGISA (NGƯỜI GIÁM SÁT) lên plan cho task, giao từng phần cho các worker, cho review mọi nhánh, rồi dừng ở draft PR để bạn quyết định.</p>
-</header>
-<section>
-<img src="assets/ngisa-demo.vi.gif" alt="NGISA lên plan, hai worker làm trong worktree riêng, reviewer duyệt, bạn merge">
-<p class="note">Ảnh minh họa, không phải bản ghi thật.</p>
-</section>
-<section>
-<h2>Đọc</h2>
-<div class="cards">
-<a href="diagrams/ngisa-and-agent-wall.vi.html"><b>Sơ đồ</b><span>Bố cục cửa sổ và luồng từ ý tưởng đến merge trên một trang.</span></a>
-<a href="https://github.com/Khoa2001/ngisa/blob/main/docs/orchestration/one-terminal-orchestrator.vi.md"><b>Thiết kế đầy đủ</b><span>Vai trò, hook, các điểm người quyết định, giới hạn gói.</span></a>
-<a href="https://github.com/Khoa2001/ngisa/blob/main/docs/orchestration/lab-quickstart.md"><b>Lab quickstart</b><span>Cài script và thử trong một bản sao dùng xong bỏ (tiếng Anh).</span></a>
-<a href="https://github.com/Khoa2001/ngisa/blob/main/docs/README.md"><b>Mục lục tài liệu</b><span>Mọi tài liệu, cấu trúc repo và các script.</span></a>
+<a class="skip" href="#main">Bỏ qua tới nội dung</a>
+<div class="wrap"><header class="top">
+<a class="brand" href="index.vi.html">NGISA</a>
+<nav aria-label="Main"><a href="index.vi.html" aria-current="page">Trang chủ</a><a href="diagrams/ngisa-and-agent-wall.vi.html">Sơ đồ</a><a href="https://github.com/Khoa2001/ngisa/blob/main/docs/README.md">Tài liệu</a><a href="https://github.com/Khoa2001/ngisa">GitHub</a></nav>
+<div class="lang"><a href="index.html" hreflang="en">English</a></div>
+</header></div>
+<div class="wrap"><main id="main">
+
+<section class="hero" aria-labelledby="h1">
+<div class="hero-text">
+<h1 id="h1"><span>Nhiều agent.</span> <span>Một repo.</span> <span><b class="hy">Bạn</b> merge.</span></h1>
+<div>
+<p class="sub">NGISA (<i>NGƯỜI GIÁM SÁT</i>) lên plan cho task, giao từng phần cho các worker Claude Code, cho review mọi nhánh, rồi dừng ở draft PR để bạn quyết định.</p>
+<div class="cta"><a class="btn primary" href="#try">Dùng thử</a><a class="btn" href="diagrams/ngisa-and-agent-wall.vi.html">Xem luồng</a></div>
+<p class="stacks">Chạy được với repo Flutter, Composer PHP và PHP thuần.</p>
+</div>
+</div>
+<div class="demo-wrap">
+<div class="demo" id="demo"><iframe id="demo-frame" src="diagrams/ngisa-demo.html?embed=1&amp;lang=vi" title="Demo NGISA: một task được lên plan, hai worker làm, reviewer duyệt, rồi chờ bạn merge" loading="eager" tabindex="-1"></iframe><noscript><img src="assets/ngisa-demo.vi.gif" alt="Demo NGISA: một task được lên plan, hai worker làm, reviewer duyệt, rồi chờ bạn merge"></noscript></div>
+<div class="demo-ctl"><button type="button" id="demo-toggle" data-pause="Tạm dừng demo" data-play="Chạy demo">Tạm dừng demo</button><span>Ảnh minh họa, không phải bản ghi thật.</span></div>
 </div>
 </section>
-<section>
-<h2>Dùng thử</h2>
-<p><code>make-lab ~/Projects/&lt;your-repo&gt;</code><br><code>repo-tab ~/lab/&lt;your-repo&gt;</code></p>
-<p class="note">Cần macOS, WezTerm, jq và Claude Code bản mới. Cài script trước: xem Lab quickstart.</p>
-</section>
-<p class="note"><a href="https://github.com/Khoa2001/ngisa">GitHub</a> - Thử nghiệm. Các lần chạy được ghi lại làm dữ liệu nghiên cứu.</p>
-</main>
+
+<section aria-labelledby="get"><h2 id="get">Bạn được gì</h2>
+<ul class="promises"><li><b class="w1">Song song</b><span>Tối đa 3 worker mỗi repo, mỗi worker có git worktree riêng và một task riêng.</span></li><li><b class="w2">Có gate</b><span>Mỗi worker chạy <code>tool/setup.sh</code> của chính repo và phải qua <code>tool/ci_local.sh</code>. Reviewer kiểm tra file gate không bị sửa. Repo Flutter, Composer PHP và PHP thuần được tạo sẵn gate.</span></li><li><b class="w3">Của bạn</b><span>Bạn duyệt plan. Worker không push được. Chỉ bạn merge vào <code>main</code>.</span></li></ul></section>
+
+<section aria-labelledby="flow"><h2 id="flow">Từ ý tưởng đến merge</h2>
+<ol class="flow"><li data-o="human"><div><b>Ý tưởng</b><span>Bạn gõ task cho NGISA.</span></div></li><li data-o="gate"><div><b>Plan</b><span>NGISA viết spec và plan. Bạn duyệt cả hai.</span></div></li><li data-o="agent"><div><b>Worker</b><span>Tối đa 3, mỗi worker một worktree, viết test trước.</span></div></li><li data-o="agent"><div><b>Gate</b><span><code>tool/ci_local.sh</code> phải exit 0.</span></div></li><li data-o="review"><div><b>Review</b><span>APPROVE, hoặc BLOCK quay lại đúng worker đó. Tối đa 2 vòng.</span></div></li><li data-o="human"><div><b>Bạn merge</b><span>Draft PR và CI. Chỉ bạn merge vào <code>main</code>.</span></div></li></ol>
+<a href="diagrams/ngisa-and-agent-wall.vi.html">Sơ đồ đầy đủ &rarr;</a></section>
+
+<section id="try" aria-labelledby="tryh"><h2 id="tryh">Dùng thử</h2>
+<span class="sr" id="copy-status" role="status" aria-live="polite"></span>
+<ol class="steps">
+<li><div><h3>Cài các script</h3><p>Một lần cho mỗi máy: bước 1 đến 3 của <a href="https://github.com/Khoa2001/ngisa/blob/main/docs/orchestration/lab-quickstart.md">lab-quickstart.md</a> (tiếng Anh).</p></div></li>
+<li><div><h3>Tạo bản lab và mở NGISA</h3><div class="term"><div class="row"><code>make-lab ~/Projects/&lt;your-repo&gt;</code><button class="copy" type="button" data-copy="make-lab ~/Projects/&lt;your-repo&gt;" data-done="Đã chép" data-manual="Không chép được. Lệnh đã được chọn: nhấn Ctrl+C." aria-label="Sao chép: make-lab">Sao chép</button></div><div class="row"><code>repo-tab ~/lab/&lt;your-repo&gt;</code><button class="copy" type="button" data-copy="repo-tab ~/lab/&lt;your-repo&gt;" data-done="Đã chép" data-manual="Không chép được. Lệnh đã được chọn: nhấn Ctrl+C." aria-label="Sao chép: repo-tab">Sao chép</button></div></div></div></li>
+<li><div><h3>Giao việc</h3><p>Chọn một task nhỏ gồm 2 phần độc lập, duyệt plan, gõ <code>go</code>. Xong thì <code>rm -rf ~/lab/&lt;your-repo&gt;</code>.</p></div></li>
+</ol>
+<p class="prereq">Cần macOS, <a href="https://wezterm.org">WezTerm</a>, <code>jq</code> và Claude Code bản mới (<code>claude update</code>), thêm <code>fvm</code> cho repo Flutter và <code>composer</code> cho repo PHP.</p></section>
+
+<section aria-labelledby="more"><h2 id="more">Đọc thêm</h2>
+<ul class="more"><li><a href="diagrams/ngisa-and-agent-wall.vi.html"><b>Sơ đồ</b></a><span>Bố cục cửa sổ và luồng từ ý tưởng đến merge.</span></li><li><a href="https://github.com/Khoa2001/ngisa/blob/main/docs/orchestration/one-terminal-orchestrator.vi.md"><b>Thiết kế đầy đủ</b></a><span>Vai trò, hook, các điểm người quyết định, giới hạn gói.</span></li><li><a href="https://github.com/Khoa2001/ngisa/blob/main/docs/orchestration/lab-setup.md"><b>Lab setup</b></a><span>Thử trong một bản sao dùng xong bỏ, không đụng ~/.claude (tiếng Anh).</span></li><li><a href="https://github.com/Khoa2001/ngisa/blob/main/docs/README.md"><b>Mục lục tài liệu</b></a><span>Mọi tài liệu, cấu trúc repo và các script.</span></li><li><a href="https://github.com/Khoa2001/ngisa/blob/main/docs/runs/"><b>Nhật ký chạy</b></a><span>Thời gian, can thiệp, BLOCK và chi phí của mỗi lần chạy.</span></li><li><a href="https://github.com/Khoa2001/ngisa"><b>GitHub</b></a><span>Mã nguồn, issue, CONTEXT.md.</span></li></ul></section>
+
+<details><summary>An toàn</summary><ul><li>Push URL của bản lab là <code>DISABLED</code>, và <code>git push</code>, <code>pub publish</code>, <code>fastlane</code>, <code>firebase deploy</code> đều bị chặn. Đường ra duy nhất là <code>agent-pr</code>: nó từ chối <code>main</code>, <code>master</code>, nhánh gốc, tên <code>worktree-*</code> và cây làm việc chưa sạch, và Claude hỏi bạn duyệt ở mỗi lần gọi.</li><li>Không có gì ở đây đụng đến <code>~/.claude</code> hay repo thật của bạn.</li><li>Đừng chạy NGISA hay worker ở chế độ bypass-permissions: báo cáo của agent gửi về NGISA sẽ bị giữ chờ duyệt. Dùng auto mode.</li><li>Tối đa 3 agent mỗi tab. Mọi agent dùng chung một hạn mức.</li></ul></details>
+
+</main></div>
+<div class="wrap"><footer class="foot"><p>Thử nghiệm. Mỗi lần chạy được ghi trong <code>docs/runs/</code> làm dữ liệu nghiên cứu.</p><p><a href="https://github.com/Khoa2001/ngisa">GitHub</a></p></footer></div>
+<script>
+document.querySelectorAll("[data-copy]").forEach(function(b){
+  var label=b.textContent;
+  b.addEventListener("click",function(){
+    var t=b.getAttribute("data-copy");
+    var st=document.getElementById("copy-status");
+    function done(){b.textContent=b.getAttribute("data-done");if(st)st.textContent=b.getAttribute("data-done");setTimeout(function(){b.textContent=label;if(st)st.textContent=""},1600)}
+    function fallback(){var a=document.createElement("textarea");a.value=t;a.setAttribute("readonly","");a.style.position="fixed";a.style.opacity="0";document.body.appendChild(a);a.select();var ok=false;try{ok=document.execCommand("copy")}catch(e){}a.remove();if(ok){done()}else{var c=b.parentNode.querySelector("code"),r=document.createRange();r.selectNodeContents(c);var g=window.getSelection();g.removeAllRanges();g.addRange(r);b.textContent="Ctrl+C";if(st)st.textContent=b.getAttribute("data-manual");setTimeout(function(){b.textContent=label;if(st)st.textContent=""},4000)}}
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(done,fallback)}else{fallback()}
+  });
+});
+var f=document.getElementById("demo-frame"),box=document.getElementById("demo"),btn=document.getElementById("demo-toggle");
+if(f&&box){
+  var flow=document.querySelectorAll(".flow li"),MAP=[0,1,1,2,3,4,4,4,5];
+  function mark(step){flow.forEach(function(li,i){li.classList.toggle("on",playing&&MAP[step]===i)})}
+  addEventListener("message",function(e){var m=e.data;if(!m||e.source!==f.contentWindow)return;
+    if(m.type==="ngisa-demo-size"){f.style.height=Math.ceil(m.h)+"px"}
+    else if(m.type==="ngisa-demo-step"){mark(m.step)}});
+  var playing=!matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function label(){btn.textContent=playing?btn.getAttribute("data-pause"):btn.getAttribute("data-play");}
+  label();
+  btn.addEventListener("click",function(){playing=!playing;if(!playing){mark(-1)};f.contentWindow.postMessage({type:"ngisa-demo",action:playing?"play":"pause"},"*");label()});
+}
+</script>
 </body>
 </html>
