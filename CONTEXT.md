@@ -60,6 +60,13 @@ Hypotheses to test:
 - The NGISA can relay extra requests to a worker (for example `/carve`) and has a quick-task path (one small edit in 1-2 named files, no plan, one implementer, reviewer still runs).
 - PRs from a lab go through `agent-pr` only. `make-lab` adds the real remote as `upstream` (origin stays the local source with a `DISABLED` push URL). `git push` stays denied in `settings.local.json`; `agent-pr` is not in any allow list, so each call needs the user's approval. It refuses main, master, the base branch, `worktree-*` names and dirty trees, opens a DRAFT PR with `gh` for github.com and `tea` otherwise (busy-bees is on Gitea).
 
+### Stack-agnostic workers (2026-10-15)
+- The implementer prompt names no tool. It runs `tool/setup.sh` and gates on `tool/ci_local.sh`, both owned by the repo and written once by `agent-init` from the detected stack (Flutter via `pubspec.yaml`/`melos.yaml`, PHP via `composer.json`). A root manifest wins, else one level down, so a Flutter app plus a PHP backend get one gate. No manifest: nothing is written and `agent-init` says so.
+- `agent-init` also writes `.worktreeinclude` (per stack secrets) and `.claude/ngisa-settings.json` (edit deny for the code dirs that exist). `repo-tab` prefers that file and falls back to the kit's Flutter `ngisa-settings.json`. `make-lab` copies the secrets listed in `.worktreeinclude`.
+- Each task from the NGISA carries paths, stack and test command; the worker uses them first and the repo files as fallback. Non-command conventions go in the repo's `CLAUDE.md`.
+- Gate integrity: `settings.local.json` denies Edit/Write on `tool/setup.sh` and `tool/ci_local.sh`; the reviewer BLOCKs a worktree whose copy differs from the main checkout, or weakened tests and lint. Known gap: shell edits. The implementer must report a failing or unrunnable gate, not fake green.
+- Not yet run against a real PHP repo (busy-bees backend). The generated PHP gate is a guess at pint, php-cs-fixer, phpstan and phpunit: review it against the repo's CI.
+
 ### Max plan limits
 - Every agent draws on the same 5-hour and weekly quota. Keep it to 3 agents per tab and about 4 or 5 running across all repos.
 - Implementers on Sonnet; Opus only for the NGISA and the reviewer.
@@ -79,7 +86,7 @@ Hypotheses to test:
 | `agents/implementer.md`, `agents/reviewer.md` | one-terminal-orchestrator.md section 2a |
 | `orchestrating.md` (becomes `CLAUDE.local.md` in a lab) | section 2c, plus the queue, quick-task, relay and PR rules from lab-quickstart.md |
 | `settings.local.json` (permissions + caveman hook) | section 2d, plus lab-quickstart.md step 2 |
-| `ngisa-settings.json` (NGISA-only edit deny) | lab-quickstart.md step 2 |
+| `ngisa-settings.json` (NGISA-only edit deny, Flutter fallback; per-repo copy comes from `agent-init`) | lab-quickstart.md step 2 |
 | `~/bin/agent-init`, `make-lab`, `repo-tab`, `agent-wall.sh`, `agent-pr`, `caveman-ultra-hook` | lab-quickstart.md step 3 |
 
 If the kit and the docs disagree, the newest doc wins. lab-quickstart.md has the latest changes: fvm detection in `agent-init`, `ngisa-settings.json`, the queue rule, and the NGISA rules below. The kit files and `~/bin` scripts are regenerated from its heredocs.
@@ -92,6 +99,7 @@ If the kit and the docs disagree, the newest doc wins. lab-quickstart.md has the
 - Still to log: wall-clock time, interventions and why, BLOCK count, and a comparison against one agent doing the same tasks.
 
 ## Open items
+- Run the stack-aware `agent-init` and an implementer on a real PHP repo; add Node or Go when a repo needs it.
 - Pick the 3 real projects and a human-only or assisted baseline task.
 - Decide where run logs and metrics live (this repo is the natural place: add `runs/`).
 - Close the NGISA's shell-edit gap.

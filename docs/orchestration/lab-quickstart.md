@@ -27,9 +27,10 @@ isolation: worktree
 background: true
 ---
 You get ONE task from an approved plan. Work only inside your worktree.
-1. Run setup first: `fvm flutter pub get` (or `melos bootstrap`), then `dart run build_runner build -d` if the package uses codegen.
-2. TDD: write the failing test, show it red, make it green.
-3. `./tool/ci_local.sh` must exit 0 before you stop.
+The task text gives the paths you may touch, the stack and the test command. Anything missing: use the repo contract below. The repo's CLAUDE.md has the stack conventions; follow them. The git, gate and scope rules below always win.
+1. Setup: run `./tool/setup.sh`. No such file: run the setup commands in CLAUDE.md. Neither exists: stop and report, do not guess a stack.
+2. TDD: write the failing test, show it red, make it green. Use the task's test command, else the one in CLAUDE.md or `tool/ci_local.sh`.
+3. `./tool/ci_local.sh` must exit 0 before you stop. Never edit `tool/ci_local.sh` or `tool/setup.sh`. Never skip, delete or loosen tests, lint rules or analyzer config to get green. If setup or the gate cannot run, or fails for a reason outside your task, stop and report the exact error. A red gate in the report is fine; a faked green is not.
 4. Commit on your branch. Never push, never merge, never touch main.
 5. Final message, exactly: branch name, files changed, test command + result, anything you could NOT verify and why.
 Do not edit files outside the task's listed paths. If you must, stop and say so.
@@ -43,8 +44,13 @@ model: opus
 tools: Read, Grep, Glob, Bash
 ---
 Diff the given branch against its base. Check: does it do the task as written, are tests real
-(would they fail without the change), any edits outside the task's paths, PII/logging of card data,
-anything irreversible. Output: APPROVE or BLOCK, then a numbered list of findings with file:line.
+(would they fail without the change), any edits outside the task's paths, logging or leaking of
+sensitive data (PII, card data, tokens, secrets), anything irreversible.
+Gate integrity: compare `tool/ci_local.sh` and `tool/setup.sh` in the branch's worktree with the copies in the
+main checkout (`$(git rev-parse --path-format=absolute --git-common-dir)/..`). In a lab these files are untracked,
+so the diff will not show them. Any difference is a BLOCK unless the task asked for it. Also BLOCK on weakened
+checks: tests removed or skipped, assertions relaxed, lint or analyzer config loosened, new ignore/suppress comments.
+Output: APPROVE or BLOCK, then a numbered list of findings with file:line.
 Do not edit files.
 EOF
 
@@ -52,12 +58,13 @@ cat > $KIT/orchestrating.md <<'EOF'
 ## Orchestrating
 You are the orchestrator (NGISA) for this repo. You do not write feature code yourself.
 1. Spec → plan with superpowers (brainstorming, writing-plans). STOP and wait for my approval of the plan.
-2. Split the approved plan into tasks. Each task lists the exact paths it may touch.
+2. Split the approved plan into tasks. Each task lists the exact paths it may touch, the stack (e.g. flutter, php)
+   and the test command, and that text goes into the worker's prompt. A repo can mix stacks: name the stack per task.
    Two tasks that touch the same file are NOT parallel; chain them.
 3. Spawn each parallel task with `agent-wall.sh <task-slug> implementer sonnet "<task text>"`.
    Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
    More tasks than free slots: keep a queue in your reply, start the next one each time a worker's report arrives.
-   You may not edit lib/ or test/ yourself, even for a one-line fix. Every code change goes to a worker.
+   You may not edit code yourself (your settings deny the code dirs), even for a one-line fix. Every code change goes to a worker.
 4. When a worker's report arrives, run the `reviewer` subagent (in-process) on its branch.
    BLOCK -> message that worker with the findings (same session, same branch). Max 2 rounds, then ask me.
 5. Only one agent runs integration tests / the emulator at a time.
@@ -80,13 +87,17 @@ cat > $KIT/settings.local.json <<'EOF'
   "permissions": {
     "allow": [
       "Bash(fvm flutter test:*)", "Bash(flutter test:*)", "Bash(fvm flutter pub get)", "Bash(flutter pub get)",
-      "Bash(melos:*)", "Bash(dart format:*)", "Bash(dart run build_runner:*)", "Bash(./tool/ci_local.sh)",
+      "Bash(melos:*)", "Bash(dart format:*)", "Bash(dart run build_runner:*)", "Bash(fvm dart run build_runner:*)",
+      "Bash(composer install:*)", "Bash(composer run-script:*)", "Bash(vendor/bin/phpunit:*)",
+      "Bash(vendor/bin/pint:*)", "Bash(vendor/bin/phpstan:*)",
+      "Bash(./tool/setup.sh)", "Bash(./tool/ci_local.sh)",
       "Bash(git status)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)", "Bash(git commit:*)",
       "Bash(git merge:*)", "Bash(git checkout:*)", "Bash(agent-wall.sh:*)"
     ],
     "deny": [
       "Bash(git push:*)", "Bash(flutter pub publish:*)", "Bash(dart pub publish:*)",
-      "Bash(fastlane:*)", "Bash(firebase deploy:*)"
+      "Bash(fastlane:*)", "Bash(firebase deploy:*)",
+      "Edit(tool/ci_local.sh)", "Write(tool/ci_local.sh)", "Edit(tool/setup.sh)", "Write(tool/setup.sh)"
     ]
   },
   "hooks": {
@@ -96,7 +107,9 @@ cat > $KIT/settings.local.json <<'EOF'
 }
 EOF
 
-# NGISA-only settings: the NGISA can write plans/docs but not code (workers don't load this file)
+# NGISA-only settings: the NGISA can write plans/docs but not code (workers don't load this file).
+# This is the Flutter default. agent-init writes a per-repo .claude/ngisa-settings.json from the detected stack,
+# and repo-tab prefers that one.
 cat > $KIT/ngisa-settings.json <<'EOF'
 {
   "permissions": {
@@ -117,21 +130,115 @@ ls -R $KIT     # expect: agents/implementer.md agents/reviewer.md orchestrating.
 ```bash
 cat > ~/bin/agent-init <<'EOF'
 #!/usr/bin/env bash
+# run once in a repo root: detects the stack(s) and adds the per-repo files if missing
+# (tool/setup.sh, tool/ci_local.sh, .worktreeinclude, .claude/ngisa-settings.json, a .gitignore line)
 set -euo pipefail
-mkdir -p tool
+mkdir -p tool .claude
 grep -qxF '.claude/worktrees/' .gitignore 2>/dev/null || echo '.claude/worktrees/' >> .gitignore
-[[ -f .worktreeinclude ]] || printf '.env\n.env.local\nandroid/key.properties\n' > .worktreeinclude
-[[ -f tool/ci_local.sh ]] || { cat > tool/ci_local.sh <<'S'
-#!/usr/bin/env bash
-set -euo pipefail
-if command -v fvm >/dev/null; then F="fvm flutter"; D="fvm dart"; else F=flutter; D=dart; fi
-if [[ -f melos.yaml ]]; then
-  melos exec -- $D format . --set-exit-if-changed && melos analyze && melos test
-else
-  $D format . --set-exit-if-changed && $F analyze && $F test
+
+# one "kind:dir" per line. A manifest at the repo root wins; otherwise look one level down.
+stacks=""
+detect() {  # kind manifest...
+  local kind=$1 m d; shift
+  for m in "$@"; do [[ -f $m ]] && { stacks="$stacks$kind:.
+"; return; }; done
+  for d in */; do
+    d=${d%/}
+    case $d in vendor|node_modules|build) continue;; esac
+    for m in "$@"; do [[ -f $d/$m ]] && { stacks="$stacks$kind:$d
+"; break; }; done
+  done
+  return 0
+}
+detect flutter pubspec.yaml melos.yaml
+detect php composer.json
+
+setup_block() {  # kind dir
+  case $1 in
+    flutter) sed "s|__DIR__|$2|g" <<'B'
+( cd "__DIR__"
+  if command -v fvm >/dev/null; then F="fvm flutter"; D="fvm dart"; else F=flutter; D=dart; fi
+  if [[ -f melos.yaml ]]; then melos bootstrap; else $F pub get; fi
+  if grep -q build_runner pubspec.yaml 2>/dev/null; then $D run build_runner build -d; fi )
+B
+    ;;
+    php) sed "s|__DIR__|$2|g" <<'B'
+( cd "__DIR__" && composer install --no-interaction --prefer-dist )
+B
+    ;;
+  esac
+}
+ci_block() {  # kind dir
+  case $1 in
+    flutter) sed "s|__DIR__|$2|g" <<'B'
+( cd "__DIR__"
+  if command -v fvm >/dev/null; then F="fvm flutter"; D="fvm dart"; else F=flutter; D=dart; fi
+  if [[ -f melos.yaml ]]; then
+    melos exec -- $D format . --set-exit-if-changed && melos analyze && melos test
+  else
+    $D format . --set-exit-if-changed && $F analyze && $F test
+  fi )
+B
+    ;;
+    php) sed "s|__DIR__|$2|g" <<'B'
+( cd "__DIR__"
+  if [[ -x vendor/bin/pint ]]; then vendor/bin/pint --test; fi
+  if [[ -x vendor/bin/php-cs-fixer ]]; then vendor/bin/php-cs-fixer fix --dry-run --diff; fi
+  if [[ -x vendor/bin/phpstan ]]; then vendor/bin/phpstan analyse --no-progress; fi
+  if grep -q '"test"' composer.json; then composer run-script test
+  elif [[ -x vendor/bin/phpunit ]]; then vendor/bin/phpunit
+  else echo "no PHP test runner found: edit tool/ci_local.sh" >&2; exit 1; fi )
+B
+    ;;
+  esac
+}
+code_dirs() {  # kind
+  case $1 in
+    flutter) echo lib test integration_test android ios;;
+    php) echo app src tests database routes resources config public;;
+  esac
+}
+
+wi='.env
+.env.local'
+deny=""
+setup_body="" ci_body=""
+while IFS=: read -r kind dir; do
+  [[ -n $kind ]] || continue
+  setup_body="$setup_body$(setup_block "$kind" "$dir")
+"
+  ci_body="$ci_body$(ci_block "$kind" "$dir")
+"
+  p=""; [[ $dir == . ]] || p="$dir/"
+  case $kind in
+    flutter) wi="$wi
+${p}android/key.properties
+${p}android/app/google-services.json
+${p}ios/Runner/GoogleService-Info.plist";;
+    php) wi="$wi
+${p}.env
+${p}auth.json";;
+  esac
+  for c in $(code_dirs "$kind"); do
+    if [[ -d ${p}$c ]]; then deny="$deny${p}$c
+"; fi
+  done
+done <<<"$stacks"
+
+if [[ -z $stacks ]]; then
+  echo "no stack detected (no pubspec.yaml or composer.json): write tool/setup.sh and tool/ci_local.sh by hand" >&2
 fi
-S
-chmod +x tool/ci_local.sh; }
+mk() {  # file body
+  [[ -f $1 || -z $2 ]] && return 0
+  { printf '#!/usr/bin/env bash\n# Generated by agent-init from the detected stack. The repo owns this file: review and edit it.\nset -euo pipefail\ncd "$(dirname "$0")/.."\n'; printf '%s\n' "$2"; } > "$1"
+  chmod +x "$1"
+}
+mk tool/setup.sh "$setup_body"
+mk tool/ci_local.sh "$ci_body"
+[[ -f .worktreeinclude ]] || printf '%s\n' "$wi" | awk 'NF && !seen[$0]++' > .worktreeinclude
+# no code dirs found: write nothing, repo-tab then falls back to the kit's ngisa-settings.json
+if [[ ! -f .claude/ngisa-settings.json && -n $deny ]]; then printf '%s' "$deny" | jq -R -s '(split("\n") | map(select(length>0)) | map(["Edit(\(.)/**)","Write(\(.)/**)"]) | add // []) as $d | {permissions: {deny: $d}}' > .claude/ngisa-settings.json; fi
+echo "done: review tool/setup.sh, tool/ci_local.sh and .worktreeinclude (secrets), then commit"
 EOF
 
 cat > ~/bin/make-lab <<'EOF'
@@ -146,16 +253,18 @@ cd "$lab"
 git remote set-url --push origin DISABLED
 # real remote for agent-pr only (direct `git push` stays denied in settings.local.json)
 if up=$(git -C "$src" remote get-url origin 2>/dev/null); then git remote add upstream "$up"; fi
-for f in .env .env.local android/key.properties android/app/google-services.json ios/Runner/GoogleService-Info.plist; do
-  [[ -f "$src/$f" ]] && mkdir -p "$(dirname "$f")" && cp "$src/$f" "$f"
-done
 mkdir -p .claude/agents
 cp "$kit"/agents/*.md .claude/agents/
 cp "$kit/settings.local.json" .claude/settings.local.json
 cp "$kit/orchestrating.md" CLAUDE.local.md
-printf '.claude/agents/\n.claude/worktrees/\nCLAUDE.local.md\n.worktreeinclude\ntool/ci_local.sh\n' >> .git/info/exclude
+printf '.claude/agents/\n.claude/ngisa-settings.json\n.claude/worktrees/\nCLAUDE.local.md\n.worktreeinclude\ntool/setup.sh\ntool/ci_local.sh\n' >> .git/info/exclude
 agent-init
-echo 'tool/ci_local.sh' >> .worktreeinclude    # untracked here, so each agent worktree needs it copied in
+# copy the gitignored secrets that .worktreeinclude lists (literal paths only) from the source repo
+while IFS= read -r f || [[ -n $f ]]; do
+  case $f in ''|'#'*|*'*'*|*'?'*|*'['*|/*|*..*) continue;; esac
+  if [[ -f "$src/$f" ]]; then mkdir -p "$(dirname "$f")"; cp "$src/$f" "$f"; fi
+done < .worktreeinclude
+printf 'tool/setup.sh\ntool/ci_local.sh\n' >> .worktreeinclude    # untracked here, so each agent worktree needs them copied in
 echo "lab ready: repo-tab $lab"
 EOF
 
@@ -164,7 +273,9 @@ cat > ~/bin/repo-tab <<'EOF'
 set -euo pipefail
 dir=$(cd "$1" && pwd); name=$(basename "$dir")
 kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/ngisa}
-pane=$(wezterm cli spawn --cwd "$dir" -- claude --name "ngisa-$name" --model opus --settings "$kit/ngisa-settings.json")
+# the repo's own deny list (agent-init writes it from the detected stack); else the kit's Flutter default
+cfg="$dir/.claude/ngisa-settings.json"; [[ -f $cfg ]] || cfg="$kit/ngisa-settings.json"
+pane=$(wezterm cli spawn --cwd "$dir" -- claude --name "ngisa-$name" --model opus --settings "$cfg")
 wezterm cli set-tab-title --pane-id "$pane" "$name"
 EOF
 
@@ -243,6 +354,24 @@ repo-tab ~/lab/vn_citizen_id_scan              # opens a new tab with the NGISA
 
 The first time, Claude asks you to trust `~/lab/vn_citizen_id_scan`. Say yes.
 
+### How a repo says what its stack is
+
+The implementer prompt names no tool. It runs two files the repo owns, and `agent-init` writes them once from what it finds:
+
+| File | Written from | Used for |
+|---|---|---|
+| `tool/setup.sh` | `pubspec.yaml` (Flutter, fvm, melos, build_runner), `composer.json` (PHP, `composer install`) | implementer step 1 |
+| `tool/ci_local.sh` | the same detection: Flutter format/analyze/test, PHP pint or php-cs-fixer, phpstan, then `composer test` or phpunit | the done gate |
+| `.worktreeinclude` | per stack secrets paths (Flutter signing and Firebase files, PHP `.env` and `auth.json`) | files each worktree needs |
+| `.claude/ngisa-settings.json` | the code dirs that exist for the stack (Flutter `lib`, `test`, ...; PHP `app`, `src`, `tests`, ...) | NGISA edit deny list, used by `repo-tab` |
+
+- A manifest at the repo root wins; otherwise `agent-init` looks one level down, so a Flutter app in `app/` plus a PHP backend in `backend/` gets one gate that runs both.
+- The generated files are a starting point. Review them against the repo's real CI, then commit them. `agent-init` never overwrites a file that exists.
+- No manifest found (another stack): it writes no setup or gate and says so. Write both by hand; nothing else changes.
+- Put stack conventions that are not commands (for example "run migrations on the test DB before phpunit") in the repo's `CLAUDE.md`. Workers read it.
+- Each task the NGISA hands out lists its paths, stack and test command; the worker uses those first and the repo files as the fallback.
+- Gate integrity: `settings.local.json` denies Edit/Write on `tool/setup.sh` and `tool/ci_local.sh` (change them by hand), and the reviewer BLOCKs if a worktree's copy differs from the main checkout or if checks were weakened. Known gap: shell edits such as `sed -i`.
+
 ## Step 5. First test (small on purpose)
 
 In the NGISA tab, type something tiny with 2 independent parts, e.g.:
@@ -277,4 +406,5 @@ To open a draft PR from the lab instead, tell the NGISA "open a PR" once the fea
 | agent stuck on "Needs you" | it hit a command not in the allow list; approve it in its pane, then add it to `settings.local.json` in the kit |
 | `agent-pr: no 'upstream' remote` | the lab was made before this script existed: `git remote add upstream <real-url>` in the lab |
 | NGISA not in caveman | `which caveman-ultra-hook` must print a path; `ls ~/lab/<repo>/.claude/settings.local.json` must have a `hooks` block |
+| implementer says setup or the gate cannot run | `agent-init` guessed the stack wrong, or found none. Edit `tool/setup.sh` and `tool/ci_local.sh` in the lab (and in the real repo) by hand: the repo owns them |
 | `tab full` | 3 agents already in this tab; wait or `wezterm cli kill-pane --pane-id N` a finished one |

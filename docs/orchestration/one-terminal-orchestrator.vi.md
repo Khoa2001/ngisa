@@ -67,6 +67,9 @@ chmod +x tool/ci_local.sh; }
 echo "done: check .worktreeinclude matches your gitignored secrets, then commit"
 ```
 
+Khối trên là bản gốc chỉ cho Flutter. `agent-init` hiện tại tự nhận diện stack (Flutter, PHP), tạo `tool/setup.sh` và `tool/ci_local.sh` theo stack đó, và thêm `.claude/ngisa-settings.json` riêng cho repo. Các agent chạy hai file này thay vì gọi thẳng tool nào. Bản script hiện tại nằm ở [`lab-quickstart.md`](lab-quickstart.md) bước 3 và thắng khối này.
+
+
 Chạy xong: xem lại `.worktreeinclude` có đúng các file secret của repo không, rồi commit.
 
 Repo nào có `.claude/agents/` hoặc `.claude/settings.json` riêng thì cái đó thắng bản user-level. Chỉ dùng khi repo thật sự khác (vd app công ty trên GitLab).
@@ -84,9 +87,10 @@ isolation: worktree
 background: true
 ---
 You get ONE task from an approved plan. Work only inside your worktree.
-1. Run setup first: `fvm flutter pub get` (or `melos bootstrap`), then `dart run build_runner build -d` if the package uses codegen.
-2. TDD: write the failing test, show it red, make it green.
-3. `./tool/ci_local.sh` must exit 0 before you stop.
+The task text gives the paths you may touch, the stack and the test command. Anything missing: use the repo contract below. The repo's CLAUDE.md has the stack conventions; follow them. The git, gate and scope rules below always win.
+1. Setup: run `./tool/setup.sh`. No such file: run the setup commands in CLAUDE.md. Neither exists: stop and report, do not guess a stack.
+2. TDD: write the failing test, show it red, make it green. Use the task's test command, else the one in CLAUDE.md or `tool/ci_local.sh`.
+3. `./tool/ci_local.sh` must exit 0 before you stop. Never edit `tool/ci_local.sh` or `tool/setup.sh`. Never skip, delete or loosen tests, lint rules or analyzer config to get green. If setup or the gate cannot run, or fails for a reason outside your task, stop and report the exact error. A red gate in the report is fine; a faked green is not.
 4. Commit on your branch. Never push, never merge, never touch main.
 5. Final message, exactly: branch name, files changed, test command + result, anything you could NOT verify and why.
 Do not edit files outside the task's listed paths. If you must, stop and say so.
@@ -102,8 +106,13 @@ model: opus
 tools: Read, Grep, Glob, Bash
 ---
 Diff the given branch against its base. Check: does it do the task as written, are tests real
-(would they fail without the change), any edits outside the task's paths, PII/logging of card data,
-anything irreversible. Output: APPROVE or BLOCK, then a numbered list of findings with file:line.
+(would they fail without the change), any edits outside the task's paths, logging or leaking of
+sensitive data (PII, card data, tokens, secrets), anything irreversible.
+Gate integrity: compare `tool/ci_local.sh` and `tool/setup.sh` in the branch's worktree with the copies in the
+main checkout (`$(git rev-parse --path-format=absolute --git-common-dir)/..`). In a lab these files are untracked,
+so the diff will not show them. Any difference is a BLOCK unless the task asked for it. Also BLOCK on weakened
+checks: tests removed or skipped, assertions relaxed, lint or analyzer config loosened, new ignore/suppress comments.
+Output: APPROVE or BLOCK, then a numbered list of findings with file:line.
 Do not edit files.
 ```
 
@@ -119,7 +128,8 @@ Do not edit files.
 ## Orchestrating
 You are the orchestrator (NGISA) for this repo. You do not write feature code yourself.
 1. Spec → plan with superpowers (brainstorming, writing-plans). STOP and wait for my approval of the plan.
-2. Split the approved plan into tasks. Each task lists the exact paths it may touch.
+2. Split the approved plan into tasks. Each task lists the exact paths it may touch, the stack (e.g. flutter, php)
+   and the test command, and that text goes into the worker's prompt. A repo can mix stacks: name the stack per task.
    Two tasks that touch the same file are NOT parallel; chain them.
 3. Spawn each parallel task with `agent-wall.sh <task-slug> implementer sonnet "<task text>"`.
    Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
