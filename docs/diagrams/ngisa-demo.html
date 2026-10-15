@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NGISA demo frames</title>
+<!--
+  Source of docs/assets/ngisa-demo.gif (and ngisa-demo.vi.gif).
+  An illustrative mock, not a recording. Open with ?step=N&lang=en|vi to see one frame.
+  Without ?step it plays the whole loop in the browser.
+  Regenerate the GIFs with docs/diagrams/render-demo-gif.sh.
+-->
+<style>
+:root{
+  --bg:#0d1117; --win:#141a24; --bar:#1c2330; --line:#2a3140; --fg:#d6dde8; --muted:#7d8799;
+  --gate:#9d8cff; --agent:#3cc4b2; --review:#e7a447; --human:#ff6b5f; --ok:#4cc68a; --warn:#e7b93e;
+  --mono:Menlo, "SF Mono", ui-monospace, Consolas, monospace;
+  --sans:-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;width:960px;height:540px;background:var(--bg);overflow:hidden;font-family:var(--sans)}
+.win{position:absolute;left:20px;top:16px;width:920px;height:456px;background:var(--win);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
+.bar{display:flex;align-items:center;gap:10px;height:30px;padding:0 12px;background:var(--bar);font:12px var(--mono);color:var(--muted)}
+.dots{display:flex;gap:6px}.dots i{width:10px;height:10px;border-radius:50%;background:#4a5363;display:block}
+.tabs{display:flex;gap:2px;padding:6px 8px 0;background:#171d28;font:12px var(--mono)}
+.tabs span{padding:5px 14px;border-radius:6px 6px 0 0;color:#8892a3}
+.tabs .on{background:var(--win);color:#fff}
+.body{display:grid;grid-template-columns:45fr 55fr;gap:2px;background:var(--line);flex:1;min-height:0}
+.ngisa{background:var(--win);padding:12px 14px;font:13px/1.6 var(--mono);color:#b9c3d3;overflow:hidden}
+.who{font:600 11px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--gate);margin-bottom:8px}
+.you{color:#fff}.you::before{content:"> ";color:var(--muted)}
+.cl::before{content:"\25CF  ";color:var(--gate)}
+.hl{color:var(--human);font-weight:700}
+.ok{color:var(--ok)}.bad{color:var(--review)}
+.stack{display:grid;grid-template-rows:repeat(3,1fr);gap:2px;background:var(--line)}
+.pane{background:var(--win);padding:9px 12px;font:12px/1.5 var(--mono);color:#b9c3d3;display:flex;flex-direction:column;gap:3px;min-height:0;overflow:hidden}
+.pane.empty{align-items:center;justify-content:center;color:#3b4456}
+.ph{display:flex;align-items:center;gap:8px;color:#fff;font-weight:600}
+.st{font:600 10px var(--sans);padding:1px 8px;border-radius:99px;color:#10141b}
+.st.w{background:var(--agent);color:#fff}.st.r{background:var(--review);color:#10141b}.st.d{background:var(--ok)}.st.n{background:var(--warn)}
+.dim{color:var(--muted)}
+.cap{position:absolute;left:20px;right:20px;top:482px;height:44px;display:flex;align-items:center;gap:12px;color:#fff;font-size:17px;font-weight:600}
+.cap .n{flex:none;width:28px;height:28px;border-radius:50%;background:var(--gate);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px}
+.cap.human .n{background:var(--human)}
+.cap small{margin-left:auto;font-weight:400;font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="win">
+  <div class="bar"><span class="dots"><i></i><i></i><i></i></span>WezTerm</div>
+  <div class="tabs"><span class="on">my-app</span><span>other-repo</span></div>
+  <div class="body">
+    <div class="ngisa" id="ngisa"></div>
+    <div class="stack" id="stack"></div>
+  </div>
+</div>
+<div class="cap" id="cap"></div>
+
+<script>
+const T = {
+  en: {
+    task: "add offline mode to the app",
+    plan: "Plan: 2 tasks (cache, sync). <span class=hl>Approve?</span>",
+    go: "go",
+    spawned: "Spawned cache, sync",
+    cacheOk: "cache <span class=ok>APPROVE</span>",
+    syncBlock: "sync <span class=bad>BLOCK</span> (round 1): no test for retry",
+    syncOk: "sync <span class=ok>APPROVE</span> (round 2)",
+    done: "Feature branch merged, CI green. Draft PR ready. <span class=hl>Your merge.</span>",
+    working: "Working", fixing: "Fixing", done_: "Done", review: "Reviewing",
+    wt: "own git worktree",
+    tests: "write failing test, make it pass",
+    gateRun: "./tool/ci_local.sh ...",
+    gateOk: "./tool/ci_local.sh <span class=ok>exit 0</span>",
+    reviewing: "check branch against task",
+    gatefiles: "gate files unchanged: ok",
+    revCache: "cache: APPROVE",
+    revSync1: "sync: BLOCK, add retry test",
+    revSync2: "sync: APPROVE",
+    caps: [
+      "You give NGISA a task",
+      "NGISA plans and splits it",
+      "You approve the plan",
+      "Workers start, each in its own git worktree",
+      "Each worker must pass the repo's tool/ci_local.sh",
+      "A reviewer checks every branch",
+      "BLOCK goes back to the same worker",
+      "Fixed, gate green, approved",
+      "Only you merge to main"
+    ],
+    note: "illustrative"
+  },
+  vi: {
+    task: "add offline mode to the app",
+    plan: "Plan: 2 task (cache, sync). <span class=hl>Duyệt?</span>",
+    go: "go",
+    spawned: "Đã chạy cache, sync",
+    cacheOk: "cache <span class=ok>APPROVE</span>",
+    syncBlock: "sync <span class=bad>BLOCK</span> (vòng 1): thiếu test retry",
+    syncOk: "sync <span class=ok>APPROVE</span> (vòng 2)",
+    done: "Nhánh feature đã gộp, CI xanh. Draft PR sẵn sàng. <span class=hl>Bạn merge.</span>",
+    working: "Đang làm", fixing: "Đang sửa", done_: "Xong", review: "Đang review",
+    wt: "git worktree riêng",
+    tests: "viết test fail, làm cho pass",
+    gateRun: "./tool/ci_local.sh ...",
+    gateOk: "./tool/ci_local.sh <span class=ok>exit 0</span>",
+    reviewing: "đối chiếu nhánh với task",
+    gatefiles: "file gate không đổi: ok",
+    revCache: "cache: APPROVE",
+    revSync1: "sync: BLOCK, thêm test retry",
+    revSync2: "sync: APPROVE",
+    caps: [
+      "Bạn giao việc cho NGISA",
+      "NGISA lên plan và chia task",
+      "Bạn duyệt plan",
+      "Worker khởi động, mỗi worker một git worktree",
+      "Mỗi worker phải qua tool/ci_local.sh của repo",
+      "Reviewer kiểm tra từng nhánh",
+      "BLOCK quay lại đúng worker đó",
+      "Sửa xong, gate xanh, được duyệt",
+      "Chỉ bạn được merge vào main"
+    ],
+    note: "minh họa"
+  }
+};
+
+// ms each step stays on screen. Used by the loop and by render-demo-gif.sh.
+const DURATIONS = [1600, 1800, 1300, 2000, 2200, 2200, 2200, 2200, 3600];
+
+function pane(name, role, st, stCls, lines){
+  return `<div class="pane"><div class="ph">${name}<span class="st ${stCls}">${st}</span></div>${lines.map(l=>`<div>${l}</div>`).join("")}</div>`;
+}
+const emptyPane = `<div class="pane empty">-</div>`;
+
+function render(step, lang){
+  const t = T[lang];
+  const n = [];
+  if(step>=0) n.push(`<div class="you">${t.task}</div>`);
+  if(step>=1) n.push(`<div class="cl">${t.plan}</div>`);
+  if(step>=2) n.push(`<div class="you">${t.go}</div>`);
+  if(step>=3) n.push(`<div class="cl">${t.spawned}</div>`);
+  if(step>=6) n.push(`<div class="cl">${t.cacheOk}</div><div class="cl">${t.syncBlock}</div>`);
+  if(step>=7) n.push(`<div class="cl">${t.syncOk}</div>`);
+  if(step>=8) n.push(`<div class="cl">${t.done}</div>`);
+  document.getElementById("ngisa").innerHTML = `<div class="who">NGISA - my-app - Opus</div>` + n.join("");
+
+  let p1 = emptyPane, p2 = emptyPane, p3 = emptyPane;
+  if(step>=3){
+    p1 = pane("my-app-cache","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.tests]);
+    p2 = pane("my-app-sync","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.tests]);
+  }
+  if(step>=4){
+    p1 = pane("my-app-cache","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.gateRun]);
+    p2 = pane("my-app-sync","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.gateRun]);
+  }
+  if(step>=5){
+    p1 = pane("my-app-cache","", t.done_,"d",[t.gateOk]);
+    p2 = pane("my-app-sync","", t.working,"w",[`<span class=dim>${t.wt}</span>`, t.gateRun]);
+    p3 = pane("reviewer","", t.review,"r",[t.reviewing, t.gatefiles]);
+  }
+  if(step>=6){
+    p1 = pane("my-app-cache","", t.done_,"d",[t.gateOk]);
+    p2 = pane("my-app-sync","", t.fixing,"n",[`<span class=bad>${t.revSync1}</span>`, t.gateRun]);
+    p3 = pane("reviewer","", t.review,"r",[`<span class=ok>${t.revCache}</span>`, `<span class=bad>${t.revSync1}</span>`]);
+  }
+  if(step>=7){
+    p2 = pane("my-app-sync","", t.done_,"d",[t.gateOk]);
+    p3 = pane("reviewer","", t.done_,"d",[`<span class=ok>${t.revCache}</span>`, `<span class=ok>${t.revSync2}</span>`]);
+  }
+  document.getElementById("stack").innerHTML = p1+p2+p3;
+
+  const cap = document.getElementById("cap");
+  cap.className = "cap" + (step===8 ? " human" : "");
+  cap.innerHTML = `<span class="n">${step+1}</span><span>${t.caps[step]}</span><small>${t.note}</small>`;
+}
+
+const q = new URLSearchParams(location.search);
+const lang = q.get("lang") === "vi" ? "vi" : "en";
+document.documentElement.lang = lang;
+if(q.has("step")){
+  render(Number(q.get("step")), lang);
+} else {
+  let i = 0;
+  (function tick(){ render(i, lang); const d = DURATIONS[i]; i = (i+1) % DURATIONS.length; setTimeout(tick, d); })();
+}
+</script>
+</body>
+</html>

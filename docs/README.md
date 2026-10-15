@@ -14,9 +14,23 @@ Docs from the "hand-off" project: can an agent system ship production software f
 
 ## diagrams/
 - `ngisa-and-agent-wall.html` (+ `.vi.html`): one-page diagram of the window layout and the idea-to-merge flow. Open in a browser.
+- `ngisa-demo.html`: source of the README GIF. Open with `?step=N&lang=en|vi` for one frame. `render-demo-gif.sh` renders it to `assets/ngisa-demo.gif` and `assets/ngisa-demo.vi.gif` (needs Chrome and `ffmpeg`).
 
 ## assets/
+- `ngisa-demo.gif` (+ `.vi.gif`): the illustrative mock-up animation shown in the root `README.md` / `README.vi.md`. Not a recording.
 - `gate-run-busy-bees.png`: screenshot of a real run (taken before the rename, so the session still reads `gate-busy-bees`) on `~/lab/busy-bees` with two Sonnet workers.
+
+## Repo files at a glance
+| Path | What |
+|---|---|
+| `agents/implementer.md`, `agents/reviewer.md` | Agent definitions |
+| `orchestrating.md` | NGISA rules, copied to `CLAUDE.local.md` in a lab clone |
+| `settings.local.json` | Permission allow and deny list (push and publish are denied) |
+| `CONTEXT.md` | Goals, hypotheses, decisions so far, open items. Start here |
+| `CLAUDE.md` | Rules for agents working in this repo |
+
+The kit files are generated from the docs, so change both together. Every doc has a Vietnamese copy (`*.vi.md`, `*.vi.html`), except `lab-setup.md` and `lab-quickstart.md`.
 
 ## runs/
 - `2026-10-15-stack-agnostic-checks.md`: headless checks of the stack-agnostic implementer on a PHP lab and a Flutter lab. Results, fixes, what was not tested.
+- `2026-10-15-readme-gif.md`: how the README GIF was made.
