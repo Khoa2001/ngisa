@@ -1,9 +1,8 @@
 {
   "permissions": {
     "deny": [
-      "Edit(lib/**)", "Write(lib/**)", "Edit(test/**)", "Write(test/**)",
-      "Edit(integration_test/**)", "Write(integration_test/**)",
-      "Edit(android/**)", "Write(android/**)", "Edit(ios/**)", "Write(ios/**)"
+      "Edit(lib/**)", "Edit(test/**)", "Edit(integration_test/**)",
+      "Edit(android/**)", "Edit(ios/**)"
     ]
   }
 }

@@ -2,13 +2,18 @@
   "permissions": {
     "allow": [
       "Bash(fvm flutter test:*)", "Bash(flutter test:*)", "Bash(fvm flutter pub get)", "Bash(flutter pub get)",
-      "Bash(melos:*)", "Bash(dart format:*)", "Bash(dart run build_runner:*)", "Bash(./tool/ci_local.sh)",
+      "Bash(melos:*)", "Bash(dart format:*)", "Bash(dart run build_runner:*)", "Bash(fvm dart run build_runner:*)",
+      "Bash(composer install:*)", "Bash(composer run-script:*)", "Bash(vendor/bin/phpunit:*)",
+      "Bash(vendor/bin/pint:*)", "Bash(vendor/bin/phpstan:*)",
+      "Bash(php -l:*)", "Bash(php tests/:*)", "Bash(diff:*)",
+      "Bash(./tool/setup.sh)", "Bash(./tool/ci_local.sh)", "Bash(./tool/ci_local.sh test/*)", "Bash(./tool/ci_local.sh tests/*)",
       "Bash(git status)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)", "Bash(git commit:*)",
       "Bash(git merge:*)", "Bash(git checkout:*)", "Bash(agent-wall.sh:*)"
     ],
     "deny": [
       "Bash(git push:*)", "Bash(flutter pub publish:*)", "Bash(dart pub publish:*)",
-      "Bash(fastlane:*)", "Bash(firebase deploy:*)"
+      "Bash(fastlane:*)", "Bash(firebase deploy:*)",
+      "Edit(tool/ci_local.sh)", "Edit(tool/setup.sh)", "Edit(tool/known_failures.txt)"
     ]
   },
   "hooks": {

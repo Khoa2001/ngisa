@@ -12,7 +12,9 @@ working unchanged, and deleting the clone removes every trace.
    ├─ CLAUDE.local.md      orchestrator rules (loads on top of your global CLAUDE.md)
    ├─ .claude/agents/      implementer.md, reviewer.md
    ├─ .claude/settings.local.json   block hook + permission allowlist
-   └─ tool/ci_local.sh     from agent-init
+   ├─ tool/setup.sh        from agent-init (stack detected: Flutter, PHP)
+   ├─ tool/ci_local.sh     from agent-init (the done gate)
+   └─ .claude/ngisa-settings.json   from agent-init (NGISA edit deny list)
 ```
 
 ## 1. Make the kit once
