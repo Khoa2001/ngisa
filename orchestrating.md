@@ -6,6 +6,8 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    Two tasks that touch the same file are NOT parallel; chain them.
 3. Spawn each parallel task with `agent-wall.sh <task-slug> implementer sonnet "<task text>"`.
    Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
+   If you create a worker's worktree yourself with `git worktree add`, git skips `.worktreeinclude`: tell the worker in its task text
+   to run `worktree-include` before anything else, so it gets `tool/setup.sh` and `tool/ci_local.sh`.
    More tasks than free slots: keep a queue in your reply, start the next one each time a worker's report arrives.
    You may not edit code yourself (your settings deny the code dirs), even for a one-line fix. Every code change goes to a worker.
 4. When a worker's report arrives, run the `reviewer` subagent (in-process) on its branch.
