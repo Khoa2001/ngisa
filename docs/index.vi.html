@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NGISA</title>
+<meta name="description" content="Chạy nhiều agent Claude Code song song trên một repo. Chúng viết code, test và review. Chỉ bạn được merge.">
+<style>
+:root{--bg:#f3f5f8;--surface:#fff;--fg:#18202c;--muted:#5b6678;--line:#d5dbe5;--gate:#5b45d6}
+@media (prefers-color-scheme:dark){:root{--bg:#10141b;--surface:#19202b;--fg:#e6ebf2;--muted:#9aa5b6;--line:#2a3140;--gate:#9d8cff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+main{max-width:860px;margin:0 auto;padding:40px 16px 56px;display:flex;flex-direction:column;gap:28px}
+h1{margin:0;font-size:clamp(32px,6vw,48px);line-height:1.1}
+h2{margin:0 0 10px;font-size:18px}
+p{margin:0;max-width:65ch}
+.lang{font-size:14px;color:var(--muted)}
+a{color:var(--gate)}
+.lead{font-size:18px}
+.sub{color:var(--muted);margin-top:6px}
+img{width:100%;height:auto;border:1px solid var(--line);border-radius:10px;display:block}
+.note{font-size:13px;color:var(--muted);margin-top:6px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px}
+.cards a{display:block;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;text-decoration:none;color:var(--fg)}
+.cards b{display:block;color:var(--gate)}
+.cards span{font-size:14px;color:var(--muted)}
+code{font:.9em Menlo,ui-monospace,monospace}
+</style>
+</head>
+<body>
+<main>
+<header>
+<div class="lang"><a href="index.html">English</a> | Tiếng Việt</div>
+<h1>NGISA</h1>
+<p class="lead">Chạy nhiều agent Claude Code song song trên một repo. Chúng viết code, test và review. Chỉ bạn được merge.</p>
+<p class="sub">NGISA (NGƯỜI GIÁM SÁT) lên plan cho task, giao từng phần cho các worker, cho review mọi nhánh, rồi dừng ở draft PR để bạn quyết định.</p>
+</header>
+<section>
+<img src="assets/ngisa-demo.vi.gif" alt="NGISA lên plan, hai worker làm trong worktree riêng, reviewer duyệt, bạn merge">
+<p class="note">Ảnh minh họa, không phải bản ghi thật.</p>
+</section>
+<section>
+<h2>Đọc</h2>
+<div class="cards">
+<a href="diagrams/ngisa-and-agent-wall.vi.html"><b>Sơ đồ</b><span>Bố cục cửa sổ và luồng từ ý tưởng đến merge trên một trang.</span></a>
+<a href="https://github.com/Khoa2001/ngisa/blob/main/docs/orchestration/one-terminal-orchestrator.vi.md"><b>Thiết kế đầy đủ</b><span>Vai trò, hook, các điểm người quyết định, giới hạn gói.</span></a>
+<a href="https://github.com/Khoa2001/ngisa/blob/main/docs/orchestration/lab-quickstart.md"><b>Lab quickstart</b><span>Cài script và thử trong một bản sao dùng xong bỏ (tiếng Anh).</span></a>
+<a href="https://github.com/Khoa2001/ngisa/blob/main/docs/README.md"><b>Mục lục tài liệu</b><span>Mọi tài liệu, cấu trúc repo và các script.</span></a>
+</div>
+</section>
+<section>
+<h2>Dùng thử</h2>
+<p><code>make-lab ~/Projects/&lt;your-repo&gt;</code><br><code>repo-tab ~/lab/&lt;your-repo&gt;</code></p>
+<p class="note">Cần macOS, WezTerm, jq và Claude Code bản mới. Cài script trước: xem Lab quickstart.</p>
+</section>
+<p class="note"><a href="https://github.com/Khoa2001/ngisa">GitHub</a> - Thử nghiệm. Các lần chạy được ghi lại làm dữ liệu nghiên cứu.</p>
+</main>
+</body>
+</html>
