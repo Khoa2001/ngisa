@@ -58,7 +58,7 @@ Needs macOS, [WezTerm](https://wezterm.org), `jq`, a recent Claude Code (`claude
 
 1. Follow steps 1 to 3 of [`lab-quickstart.md`](docs/orchestration/lab-quickstart.md) once per machine. They install six scripts into `~/bin`:
    - `make-lab <repo>`: clones the repo into `~/lab/<name>`, disables its push URL (adding the real remote as `upstream`), copies in the kit.
-   - `repo-tab <dir>`: opens a WezTerm tab running the NGISA for that repo.
+   - `repo-tab <dir>`: turns the tab you run it in into the NGISA for that repo (a new tab if that tab has several panes).
    - `agent-wall.sh`: called by the NGISA to start a worker and open its pane.
    - `agent-init`: detects the stack (Flutter, PHP) and adds the per-repo files (`tool/setup.sh`, `tool/ci_local.sh`, `.worktreeinclude`, `.claude/ngisa-settings.json`, a `.gitignore` line). Workers run those two scripts, so the agent prompts name no tool.
    - `agent-pr "<title>" "<body>"`: the only push path. Pushes the feature branch to `upstream` and opens a draft PR (`gh` for GitHub, `tea` otherwise). NGISA runs it only when you ask, and Claude asks you to approve each call.

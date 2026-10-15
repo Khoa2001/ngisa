@@ -17,3 +17,6 @@ Docs from the "hand-off" project: can an agent system ship production software f
 
 ## assets/
 - `gate-run-busy-bees.png`: screenshot of a real run (taken before the rename, so the session still reads `gate-busy-bees`) on `~/lab/busy-bees` with two Sonnet workers.
+
+## runs/
+- `2026-10-15-stack-agnostic-checks.md`: headless checks of the stack-agnostic implementer on a PHP lab and a Flutter lab. Results, fixes, what was not tested.

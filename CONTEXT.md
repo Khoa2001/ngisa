@@ -43,9 +43,9 @@ Hypotheses to test:
 - CI plus a Claude review is the second reviewer.
 
 ### Orchestrator (docs/orchestration/one-terminal-orchestrator.md, 2026-10-14)
-- No custom framework and no tmux manager. Use Claude Code itself: background sessions (`claude --bg --name X`), subagents, worktrees, `claude agents` for the overview.
+- No custom framework and no tmux manager. Use Claude Code itself: background sessions (`claude --bg --name X`), subagents, worktrees, `claude agents` to see every agent in one list.
 - Skip agent teams for code: experimental, shared checkout with no worktrees, about 7x the tokens, and their split mode does not support WezTerm.
-- Layout went through three versions: (1) one pane, (2) two windows (NGISA window plus agent wall), then the final one, (3) **one WezTerm window, one tab per repo**. The first tab runs `claude agents` as the overview. Each repo tab has its NGISA on the left and up to 3 agent panes on the right. `repo-tab <path>` opens one.
+- Layout went through three versions: (1) one pane, (2) two windows (NGISA window plus agent wall), then the final one, (3) **one WezTerm window, one tab per repo**. Each repo tab has its NGISA on the left and up to 3 agent panes on the right. `repo-tab <path>` opens one.
 - **One NGISA per repo, not one global NGISA.** A global NGISA plans without the repo's CLAUDE.md, mixes repos in one context, and one stuck prompt stalls everything. Never run two NGISA sessions on the same repo.
 - Roles: NGISA = Opus, plans and dispatches, never writes code. Implementer = Sonnet, in its own worktree, TDD, reports to `@ngisa-<repo>`. Reviewer = Opus, answers APPROVE or BLOCK. A BLOCK goes back to the same implementer, for 2 rounds at most, and after that the human decides.
 - Approved branches merge into a local feature branch, `ci_local.sh` runs, and a draft PR opens. Only the human merges to main (a hook enforces it).
@@ -65,7 +65,11 @@ Hypotheses to test:
 - `agent-init` also writes `.worktreeinclude` (per stack secrets) and `.claude/ngisa-settings.json` (edit deny for the code dirs that exist). `repo-tab` prefers that file and falls back to the kit's Flutter `ngisa-settings.json`. `make-lab` copies the secrets listed in `.worktreeinclude`.
 - Each task from the NGISA carries paths, stack and test command; the worker uses them first and the repo files as fallback. Non-command conventions go in the repo's `CLAUDE.md`.
 - Gate integrity: `settings.local.json` denies Edit (covers Write) on `tool/setup.sh` and `tool/ci_local.sh`; the reviewer BLOCKs a worktree whose copy differs from the main checkout, or weakened tests and lint. Known gap: shell edits. The implementer must report a failing or unrunnable gate, not fake green.
-- Not yet run against a real PHP repo (busy-bees backend). The generated PHP gate is a guess at pint, php-cs-fixer, phpstan and phpunit: review it against the repo's CI.
+- Checked headless on 2026-10-15, see `docs/runs/2026-10-15-stack-agnostic-checks.md`. Pane layout, queueing and report delivery through `agent-wall.sh` were not exercised.
+- The generated PHP gate is still a guess at pint, php-cs-fixer, phpstan and phpunit: review it against the repo's CI. `dotbedu_preschool_busybee` is a DotB monolith with no `composer.json`, so `agent-init` has a plain-PHP kind: a root `index.php` means no install step, `php -l` on changed `.php` files, and every `tests/*_test.php` must exit 0 (`./tool/ci_local.sh <paths>` runs chosen ones). Its code is vendored and PHP is 7.4. The generated gate passed on the lab, failed on a syntax error and on a failing test, and a worker finished a task through it and committed.
+- Flutter gate on a repo that is not clean: busy-bees has 398 unformatted files, 158 analyzer warnings and 15 failing tests, so a repo-wide gate is red from the start. The generated gate therefore formats only changed files and fails warnings only in changed files. Failing tests: `./tool/ci_local.sh --record-baseline` (first argument only, run by a human once on a clean base) writes `tool/known_failures.txt`; the gate then fails only on failures not in it. busy-bees: 15 recorded, gate exits 0, a full run is about 11 minutes.
+- `make-lab` copies a `CLAUDE.md` or `AGENTS.md` that git does not track (busy-bees gitignores it) and lists it in `.worktreeinclude`, so workers see it. Before this, labs of such repos had no `CLAUDE.md`.
+- Worktree sessions do load the lab's `.claude/settings.local.json` (the deny on `tool/ci_local.sh` held inside a worktree), which closes that open item.
 
 ### Max plan limits
 - Every agent draws on the same 5-hour and weekly quota. Keep it to 3 agents per tab and about 4 or 5 running across all repos.
@@ -99,10 +103,13 @@ If the kit and the docs disagree, the newest doc wins. lab-quickstart.md has the
 - Still to log: wall-clock time, interventions and why, BLOCK count, and a comparison against one agent doing the same tasks.
 
 ## Open items
-- Run the stack-aware `agent-init` and an implementer on a real PHP repo; add Node or Go when a repo needs it.
+- Run the stack-aware `agent-init` and an implementer on a real Composer PHP repo; add Node or Go when a repo needs it.
+- Full Flutter gate on busy-bees takes about 11 minutes. Workers can use `./tool/ci_local.sh test/<path>` while working; consider whether the full gate should run once per task or only at merge.
+- Plain-PHP gate has no baseline file for failing tests (only Flutter does) and does not run `config.php`-dependent tests: the repo's one test is standalone. Add `config.php` to `.worktreeinclude` if a task needs it.
+- Exercise the real flow in WezTerm once: `agent-wall.sh` panes, the queue, report delivery.
 - Pick the 3 real projects and a human-only or assisted baseline task.
 - Decide where run logs and metrics live (this repo is the natural place: add `runs/`).
-- Close the NGISA's shell-edit gap.
+- Close the NGISA's shell-edit gap. Same for workers: a shell edit of `tool/ci_local.sh` is only caught by the reviewer's diff.
 - Run `agent-pr` for real against a throwaway repo on GitHub and on Gitea. Only the dry run and the guards were tested.
 - Check that Opus and Sonnet follow the caveman hook, and that worktree sessions load the hook (they use the project settings of the main clone).
 - Fix the worktree branch naming mismatch.

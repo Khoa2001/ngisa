@@ -28,9 +28,9 @@ background: true
 ---
 You get ONE task from an approved plan. Work only inside your worktree.
 The task text gives the paths you may touch, the stack and the test command. Anything missing: use the repo contract below. The repo's CLAUDE.md has the stack conventions; follow them. The git, gate and scope rules below always win.
-1. Setup: run `./tool/setup.sh`. No such file: run the setup commands in CLAUDE.md. Neither exists: stop and report, do not guess a stack.
+1. Before you touch any file, run `./tool/setup.sh`. No such file: run the setup commands in CLAUDE.md. Neither exists: stop and report now, edit nothing, do not guess a stack.
 2. TDD: write the failing test, show it red, make it green. Use the task's test command, else the one in CLAUDE.md or `tool/ci_local.sh`.
-3. `./tool/ci_local.sh` must exit 0 before you stop. Never edit `tool/ci_local.sh` or `tool/setup.sh`. Never skip, delete or loosen tests, lint rules or analyzer config to get green. If setup or the gate cannot run, or fails for a reason outside your task, stop and report the exact error. A red gate in the report is fine; a faked green is not.
+3. `./tool/ci_local.sh` must exit 0 before you stop. Never edit `tool/ci_local.sh`, `tool/setup.sh` or `tool/known_failures.txt`, and never run `--record-baseline`. `./tool/ci_local.sh <test paths>` runs just those tests for quick checks; the full gate must still exit 0 before you stop. A test listed in `tool/known_failures.txt` was already failing before you; leave it. Never skip, delete or loosen tests, lint rules or analyzer config to get green. If setup or the gate cannot run, or fails for a reason outside your task, stop and report the exact error. A red gate in the report is fine; a faked green is not.
 4. Commit on your branch. Never push, never merge, never touch main.
 5. Final message, exactly: branch name, files changed, test command + result, anything you could NOT verify and why.
 Do not edit files outside the task's listed paths. If you must, stop and say so.
@@ -46,10 +46,10 @@ tools: Read, Grep, Glob, Bash
 Diff the given branch against its base. Check: does it do the task as written, are tests real
 (would they fail without the change), any edits outside the task's paths, logging or leaking of
 sensitive data (PII, card data, tokens, secrets), anything irreversible.
-Gate integrity: compare `tool/ci_local.sh` and `tool/setup.sh` in the branch's worktree with the copies in the
+Gate integrity: run `diff` on `tool/ci_local.sh`, `tool/setup.sh` and (if it exists) `tool/known_failures.txt` between the branch's worktree and the
 main checkout (`$(git rev-parse --path-format=absolute --git-common-dir)/..`). In a lab these files are untracked,
-so the diff will not show them. Any difference is a BLOCK unless the task asked for it. Also BLOCK on weakened
-checks: tests removed or skipped, assertions relaxed, lint or analyzer config loosened, new ignore/suppress comments.
+so the git diff will not show them. Any difference is a BLOCK unless the task asked for it. Also BLOCK on weakened
+checks: a new line in `tool/known_failures.txt`, tests removed or skipped, assertions relaxed, lint or analyzer config loosened, new ignore/suppress comments.
 Output: APPROVE or BLOCK, then a numbered list of findings with file:line.
 Do not edit files.
 EOF
@@ -90,14 +90,15 @@ cat > $KIT/settings.local.json <<'EOF'
       "Bash(melos:*)", "Bash(dart format:*)", "Bash(dart run build_runner:*)", "Bash(fvm dart run build_runner:*)",
       "Bash(composer install:*)", "Bash(composer run-script:*)", "Bash(vendor/bin/phpunit:*)",
       "Bash(vendor/bin/pint:*)", "Bash(vendor/bin/phpstan:*)",
-      "Bash(./tool/setup.sh)", "Bash(./tool/ci_local.sh)",
+      "Bash(php -l:*)", "Bash(php tests/:*)", "Bash(diff:*)",
+      "Bash(./tool/setup.sh)", "Bash(./tool/ci_local.sh)", "Bash(./tool/ci_local.sh test/*)", "Bash(./tool/ci_local.sh tests/*)",
       "Bash(git status)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)", "Bash(git commit:*)",
       "Bash(git merge:*)", "Bash(git checkout:*)", "Bash(agent-wall.sh:*)"
     ],
     "deny": [
       "Bash(git push:*)", "Bash(flutter pub publish:*)", "Bash(dart pub publish:*)",
       "Bash(fastlane:*)", "Bash(firebase deploy:*)",
-      "Edit(tool/ci_local.sh)", "Edit(tool/setup.sh)"
+      "Edit(tool/ci_local.sh)", "Edit(tool/setup.sh)", "Edit(tool/known_failures.txt)"
     ]
   },
   "hooks": {
@@ -151,6 +152,11 @@ detect() {  # kind manifest...
 }
 detect flutter pubspec.yaml melos.yaml
 detect php composer.json
+# plain PHP (no composer.json, e.g. a DotB/SugarCRM-style app with vendored deps): an index.php at the root
+if ! printf '%s' "$stacks" | grep -q '^php:'; then
+  if [[ -f index.php ]]; then stacks="${stacks}phpplain:.
+"; fi
+fi
 
 setup_block() {  # kind dir
   case $1 in
@@ -165,6 +171,10 @@ B
 ( cd "__DIR__" && composer install --no-interaction --prefer-dist )
 B
     ;;
+    phpplain) sed "s|__DIR__|$2|g" <<'B'
+( cd "__DIR__" && php -v >/dev/null )   # dependencies are vendored: nothing to install
+B
+    ;;
   esac
 }
 ci_block() {  # kind dir
@@ -172,10 +182,38 @@ ci_block() {  # kind dir
     flutter) sed "s|__DIR__|$2|g" <<'B'
 ( cd "__DIR__"
   if command -v fvm >/dev/null; then F="fvm flutter"; D="fvm dart"; else F=flutter; D=dart; fi
+  # format: only the .dart files this branch changed (committed or not), so old unformatted code never blocks a worker
+  base=$(git merge-base HEAD origin/HEAD 2>/dev/null || git rev-parse HEAD)
+  changed=$( { git diff --name-only --relative --diff-filter=ACMR "$base" -- '*.dart'; git ls-files --others --exclude-standard -- '*.dart'; } | sort -u )
+  if [[ -n $changed ]]; then printf '%s\n' "$changed" | tr '\n' '\0' | xargs -0 $D format --output=none --set-exit-if-changed; fi
   if [[ -f melos.yaml ]]; then
-    melos exec -- $D format . --set-exit-if-changed && melos analyze && melos test
+    melos analyze && melos test
   else
-    $D format . --set-exit-if-changed && $F analyze && $F test
+    # errors anywhere fail the gate; warnings only in the files this branch changed (old code has hundreds)
+    $F analyze --no-fatal-warnings --no-fatal-infos
+    if [[ -n $changed ]]; then printf '%s\n' "$changed" | tr '\n' '\0' | xargs -0 $F analyze --no-fatal-infos; fi
+    # tests: fail only on failures that are not listed in tool/known_failures.txt (old failures of a repo that is red).
+    # Extra args go to `flutter test` (paths, --plain-name). `--record-baseline` rewrites the list from this run.
+    # --record-baseline only counts as the first argument, so the allow rule for `./tool/ci_local.sh test/*` cannot record one
+    record=0; if [[ ${1:-} == --record-baseline ]]; then record=1; shift; fi
+    targs=("$@")
+    out=$(mktemp); rc=0
+    $F test --reporter json ${targs[@]+"${targs[@]}"} > "$out" || rc=$?
+    failing=$(jq -R 'fromjson? // empty' "$out" | jq -sr --arg root "$PWD/" '
+      (map(select(.type=="suite")) | map({key: (.suite.id|tostring), value: (.suite.path|ltrimstr($root))}) | from_entries) as $s
+      | (map(select(.type=="testStart")) | map({key: (.test.id|tostring), value: "\($s[(.test.suiteID|tostring)])::\(.test.name | split($root) | join(""))"}) | from_entries) as $t
+      | map(select(.type=="testDone" and .result!="success" and (.skipped|not)) | $t[(.testID|tostring)]) | unique | .[]' | sed '/^$/d')
+    known="$ROOT/tool/known_failures.txt"
+    if [[ $record == 1 ]]; then
+      printf '%s\n' "$failing" | sed '/^$/d' > "$known"
+      echo "recorded $(wc -l < "$known" | tr -d ' ') known failures in tool/known_failures.txt"
+    else
+      known_list=$( [[ -f $known ]] && sort -u "$known" || true )
+      new=$(comm -13 <(printf '%s\n' "$known_list") <(printf '%s\n' "$failing" | sort -u) | sed '/^$/d')
+      if [[ -n $new ]]; then echo "NEW test failures (not in tool/known_failures.txt):" >&2; printf '%s\n' "$new" >&2; exit 1; fi
+      if [[ $rc -ne 0 && -z $failing ]]; then echo "flutter test exited $rc without a failing test (compile error?):" >&2; tail -n 20 "$out" >&2; exit 1; fi
+      echo "tests ok: $(printf '%s\n' "$failing" | sed '/^$/d' | wc -l | tr -d ' ') known failures still failing"
+    fi
   fi )
 B
     ;;
@@ -189,12 +227,30 @@ B
   else echo "no PHP test runner found: edit tool/ci_local.sh" >&2; exit 1; fi )
 B
     ;;
+    phpplain) sed "s|__DIR__|$2|g" <<'B'
+( cd "__DIR__"
+  # lint only the .php files this branch changed (committed or not); vendored and old code is not re-linted
+  base=$(git merge-base HEAD origin/HEAD 2>/dev/null || git rev-parse HEAD)
+  changed=$( { git diff --name-only --relative --diff-filter=ACMR "$base" -- '*.php'; git ls-files --others --exclude-standard -- '*.php'; } | sort -u )
+  while IFS= read -r f; do
+    [[ -n $f ]] || continue
+    out=$(php -l "$f" 2>&1) || { printf '%s\n' "$out" >&2; exit 1; }
+  done <<<"$changed"
+  # tests: every tests/**/*_test.php script (or the paths given as args); each must exit 0
+  if [[ $# -gt 0 ]]; then tests=$(printf '%s\n' "$@"); else tests=$( { git ls-files -- 'tests/*_test.php'; git ls-files --others --exclude-standard -- 'tests/*_test.php'; } | sort -u ); fi
+  while IFS= read -r t; do
+    [[ -n $t ]] || continue
+    echo "== php $t"; php "$t"
+  done <<<"$tests" )
+B
+    ;;
   esac
 }
 code_dirs() {  # kind
   case $1 in
     flutter) echo lib test integration_test android ios;;
     php) echo app src tests database routes resources config public;;
+    phpplain) ;;
   esac
 }
 
@@ -211,32 +267,38 @@ while IFS=: read -r kind dir; do
   p=""; [[ $dir == . ]] || p="$dir/"
   case $kind in
     flutter) wi="$wi
+tool/known_failures.txt
 ${p}android/key.properties
 ${p}android/app/google-services.json
 ${p}ios/Runner/GoogleService-Info.plist";;
     php) wi="$wi
 ${p}.env
 ${p}auth.json";;
+    phpplain) wi="$wi
+${p}.env";;
   esac
   for c in $(code_dirs "$kind"); do
-    if [[ -d ${p}$c ]]; then deny="$deny${p}$c
+    if [[ -d ${p}$c ]]; then deny="$deny${p}$c/**
 "; fi
   done
+  # plain PHP has no fixed code dirs: the NGISA may not edit any .php file
+  if [[ $kind == phpplain ]]; then deny="$deny${p}**/*.php
+"; fi
 done <<<"$stacks"
 
 if [[ -z $stacks ]]; then
-  echo "no stack detected (no pubspec.yaml or composer.json): write tool/setup.sh and tool/ci_local.sh by hand" >&2
+  echo "no stack detected (no pubspec.yaml, composer.json or root index.php): write tool/setup.sh and tool/ci_local.sh by hand" >&2
 fi
 mk() {  # file body
   [[ -f $1 || -z $2 ]] && return 0
-  { printf '#!/usr/bin/env bash\n# Generated by agent-init from the detected stack. The repo owns this file: review and edit it.\nset -euo pipefail\ncd "$(dirname "$0")/.."\n'; printf '%s\n' "$2"; } > "$1"
+  { printf '#!/usr/bin/env bash\n# Generated by agent-init from the detected stack. The repo owns this file: review and edit it.\nset -euo pipefail\ncd "$(dirname "$0")/.."\nROOT=$PWD\n'; printf '%s\n' "$2"; } > "$1"
   chmod +x "$1"
 }
 mk tool/setup.sh "$setup_body"
 mk tool/ci_local.sh "$ci_body"
 [[ -f .worktreeinclude ]] || printf '%s\n' "$wi" | awk 'NF && !seen[$0]++' > .worktreeinclude
 # no code dirs found: write nothing, repo-tab then falls back to the kit's ngisa-settings.json
-if [[ ! -f .claude/ngisa-settings.json && -n $deny ]]; then printf '%s' "$deny" | jq -R -s '(split("\n") | map(select(length>0)) | map(["Edit(\(.)/**)"]) | add // []) as $d | {permissions: {deny: $d}}' > .claude/ngisa-settings.json; fi
+if [[ ! -f .claude/ngisa-settings.json && -n $deny ]]; then printf '%s' "$deny" | jq -R -s '(split("\n") | map(select(length>0)) | map(["Edit(\(.))"]) | add // []) as $d | {permissions: {deny: $d}}' > .claude/ngisa-settings.json; fi
 echo "done: review tool/setup.sh, tool/ci_local.sh and .worktreeinclude (secrets), then commit"
 EOF
 
@@ -256,7 +318,7 @@ mkdir -p .claude/agents
 cp "$kit"/agents/*.md .claude/agents/
 cp "$kit/settings.local.json" .claude/settings.local.json
 cp "$kit/orchestrating.md" CLAUDE.local.md
-printf '.claude/agents/\n.claude/ngisa-settings.json\n.claude/worktrees/\nCLAUDE.local.md\n.worktreeinclude\ntool/setup.sh\ntool/ci_local.sh\n' >> .git/info/exclude
+printf '.claude/agents/\n.claude/ngisa-settings.json\n.claude/worktrees/\nCLAUDE.local.md\n.worktreeinclude\ntool/setup.sh\ntool/ci_local.sh\ntool/known_failures.txt\n' >> .git/info/exclude
 agent-init
 # copy the gitignored secrets that .worktreeinclude lists (literal paths only) from the source repo
 while IFS= read -r f || [[ -n $f ]]; do
@@ -264,6 +326,18 @@ while IFS= read -r f || [[ -n $f ]]; do
   if [[ -f "$src/$f" ]]; then mkdir -p "$(dirname "$f")"; cp "$src/$f" "$f"; fi
 done < .worktreeinclude
 printf 'tool/setup.sh\ntool/ci_local.sh\n' >> .worktreeinclude    # untracked here, so each agent worktree needs them copied in
+# a CLAUDE.md or AGENTS.md that git does not track (gitignored or untracked in the source) is not in the clone:
+# copy it, and list it so every agent worktree gets it too
+for f in CLAUDE.md AGENTS.md; do
+  if [[ -f "$src/$f" && ! -e $f ]]; then cp "$src/$f" "$f"; printf '%s\n' "$f" >> .git/info/exclude; printf '%s\n' "$f" >> .worktreeinclude; fi
+done
+# pre-accept Claude's folder-trust dialog (and its permissions warning) for this lab: it is our own clone.
+# Edits Claude's state file ~/.claude.json atomically and keeps a backup next to it.
+cj="$HOME/.claude.json"
+if [[ -f $cj ]]; then
+  tmp=$(mktemp)
+  jq --arg p "$lab" '.projects[$p].hasTrustDialogAccepted = true' "$cj" > "$tmp" && cp "$cj" "$cj.bak-make-lab" && mv "$tmp" "$cj"
+fi
 echo "lab ready: repo-tab $lab"
 EOF
 
@@ -274,7 +348,17 @@ dir=$(cd "$1" && pwd); name=$(basename "$dir")
 kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/ngisa}
 # the repo's own deny list (agent-init writes it from the detected stack); else the kit's Flutter default
 cfg="$dir/.claude/ngisa-settings.json"; [[ -f $cfg ]] || cfg="$kit/ngisa-settings.json"
-pane=$(wezterm cli spawn --cwd "$dir" -- claude --name "ngisa-$name" --model opus --settings "$cfg")
+args=(--name "ngisa-$name" --model opus --settings "$cfg")
+# run from a tab that is a lone shell pane: become the NGISA right here, so no blank shell tab is left behind.
+# Otherwise (several panes, or not in WezTerm) open a new tab.
+me=${WEZTERM_PANE:-}
+if [[ -n $me ]] && jq -e --argjson p "$me" '(.[] | select(.pane_id==$p) | .tab_id) as $t | [.[] | select(.tab_id==$t)] | length == 1' \
+    <<<"$(wezterm cli list --format json)" >/dev/null; then
+  wezterm cli set-tab-title --pane-id "$me" "$name"
+  cd "$dir"
+  exec claude "${args[@]}"
+fi
+pane=$(wezterm cli spawn --cwd "$dir" -- claude "${args[@]}")
 wezterm cli set-tab-title --pane-id "$pane" "$name"
 EOF
 
@@ -348,10 +432,10 @@ which make-lab repo-tab agent-wall.sh agent-pr caveman-ultra-hook      # all fiv
 ```bash
 claude update                                  # agent view and --bg need a recent version
 make-lab ~/Projects/vn_citizen_id_scan         # your repo path here
-repo-tab ~/lab/vn_citizen_id_scan              # opens a new tab with the NGISA
+repo-tab ~/lab/vn_citizen_id_scan              # this tab becomes the NGISA (a new tab if this one has several panes)
 ```
 
-The first time, Claude asks you to trust `~/lab/vn_citizen_id_scan`. Say yes.
+`make-lab` pre-accepts Claude's "trust this folder" dialog (and its permissions warning) for the lab path by setting `projects["<lab path>"].hasTrustDialogAccepted` in `~/.claude.json`, with a backup at `~/.claude.json.bak-make-lab`. Skip that block of `make-lab` if you would rather answer the dialog yourself.
 
 ### How a repo says what its stack is
 
@@ -359,10 +443,11 @@ The implementer prompt names no tool. It runs two files the repo owns, and `agen
 
 | File | Written from | Used for |
 |---|---|---|
-| `tool/setup.sh` | `pubspec.yaml` (Flutter, fvm, melos, build_runner), `composer.json` (PHP, `composer install`) | implementer step 1 |
-| `tool/ci_local.sh` | the same detection: Flutter format/analyze/test, PHP pint or php-cs-fixer, phpstan, then `composer test` or phpunit | the done gate |
+| `tool/setup.sh` | `pubspec.yaml` (Flutter, fvm, melos, build_runner), `composer.json` (PHP, `composer install`), or a root `index.php` with no `composer.json` (plain PHP with vendored deps: nothing to install) | implementer step 1 |
+| `tool/ci_local.sh` | the same detection. Flutter: `dart format` on the files the branch changed, `flutter analyze` (errors fail anywhere, warnings fail in changed files), `flutter test` failing only on tests not listed in `tool/known_failures.txt`. PHP with Composer: pint or php-cs-fixer, phpstan, then `composer test` or phpunit. Plain PHP: `php -l` on the changed `.php` files, then every `tests/**/*_test.php` script must exit 0 | the done gate |
+| `tool/known_failures.txt` | made by `./tool/ci_local.sh --record-baseline` (you run it once on a clean base; the worker cannot) | tests that already fail, so the Flutter gate stays green on a red repo |
 | `.worktreeinclude` | per stack secrets paths (Flutter signing and Firebase files, PHP `.env` and `auth.json`) | files each worktree needs |
-| `.claude/ngisa-settings.json` | the code dirs that exist for the stack (Flutter `lib`, `test`, ...; PHP `app`, `src`, `tests`, ...) | NGISA edit deny list, used by `repo-tab` |
+| `.claude/ngisa-settings.json` | the code dirs that exist for the stack (Flutter `lib`, `test`, ...; PHP `app`, `src`, `tests`, ...); plain PHP denies every `**/*.php` | NGISA edit deny list, used by `repo-tab` |
 
 - A manifest at the repo root wins; otherwise `agent-init` looks one level down, so a Flutter app in `app/` plus a PHP backend in `backend/` gets one gate that runs both.
 - The generated files are a starting point. Review them against the repo's real CI, then commit them. `agent-init` never overwrites a file that exists.
@@ -382,7 +467,7 @@ Approve the spec, approve the plan, then say `go`. The NGISA answers in caveman 
 - each agent finishes with tests green, then the NGISA says it got a report
 - the NGISA runs the reviewer and shows you one table
 
-Optional: open another tab and run `claude agents` to see every agent in one list.
+Optional: run `claude agents` in a spare tab to see every agent in one list. `repo-tab` does not open an overview tab.
 
 ## Step 6. Clean up or keep
 
