@@ -1,5 +1,5 @@
 /* Shared look for the NGISA pages on GitHub Pages: index and the diagram pages.
-   Dark is the base (it comes from the terminal the product lives in); light follows the system. */
+   Dark only: it comes from the terminal the product lives in. */
 :root{
   color-scheme:dark;
   --bg:#0b0f16; --surface:#121926; --lane:#0f1520; --line:#243044; --fg:#e8edf5; --muted:#98a4b8;
@@ -9,12 +9,6 @@
   --body:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
   --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
 }
-@media (prefers-color-scheme:light){:root{
-  color-scheme:light;
-  --bg:#f5f6f9; --surface:#ffffff; --lane:#eceff5; --line:#d6dce7; --fg:#151b26; --muted:#566175;
-  --gate:#5b45d6; --agent:#0b7d70; --review:#9c5d0c; --human:#c8322a; --ok:#1f7f50; --warn:#8a6508;
-  --on-gate:#ffffff;
-}}
 *{box-sizing:border-box}
 html{scrollbar-color:var(--line) var(--bg);scroll-behavior:smooth}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
