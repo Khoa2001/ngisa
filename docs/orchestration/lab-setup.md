@@ -93,5 +93,5 @@ If you want even the global `CLAUDE.md`, plugins and hooks out of the picture, r
 separate config folder: `CLAUDE_CONFIG_DIR=$HOME/.claude-lab claude`. Every `~/.claude` path then
 lives under `~/.claude-lab` ([docs](https://code.claude.com/docs/en/claude-directory)). The cost: no
 superpowers until you install it again there, you may need to log in again, and every command in the
-scripts (`repo-tab`, the `claude attach` panes) must carry the same variable, because panes WezTerm
+scripts (`repo-tab`, the `agent-view` panes) must carry the same variable, because panes WezTerm
 opens don't inherit it. More moving parts; only worth it if your global hooks get in the way.

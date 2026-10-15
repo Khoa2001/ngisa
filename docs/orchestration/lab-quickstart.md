@@ -32,7 +32,7 @@ The task text gives the paths you may touch, the stack and the test command. Any
 2. TDD: write the failing test, show it red, make it green. Use the task's test command, else the one in CLAUDE.md or `tool/ci_local.sh`.
 3. `./tool/ci_local.sh` must exit 0 before you stop. Never edit `tool/ci_local.sh`, `tool/setup.sh` or `tool/known_failures.txt`, and never run `--record-baseline`. `./tool/ci_local.sh <test paths>` runs just those tests for quick checks; the full gate must still exit 0 before you stop. A test listed in `tool/known_failures.txt` was already failing before you; leave it. Never skip, delete or loosen tests, lint rules or analyzer config to get green. If setup or the gate cannot run, or fails for a reason outside your task, stop and report the exact error. A red gate in the report is fine; a faked green is not.
 4. Commit on your branch. Never push, never merge, never touch main.
-5. Final message, exactly: branch name, files changed, test command + result, anything you could NOT verify and why.
+5. Final message, exactly: branch name, files changed, test command + result, anything you could NOT verify and why. Write it in caveman ultra (no articles or filler, fragments OK); branch, paths, commands and errors stay exact.
 Do not edit files outside the task's listed paths. If you must, stop and say so.
 EOF
 
@@ -50,7 +50,7 @@ Gate integrity: run `diff` on `tool/ci_local.sh`, `tool/setup.sh` and (if it exi
 main checkout (`$(git rev-parse --path-format=absolute --git-common-dir)/..`). In a lab these files are untracked,
 so the git diff will not show them. Any difference is a BLOCK unless the task asked for it. Also BLOCK on weakened
 checks: a new line in `tool/known_failures.txt`, tests removed or skipped, assertions relaxed, lint or analyzer config loosened, new ignore/suppress comments.
-Output: APPROVE or BLOCK, then a numbered list of findings with file:line.
+Output: APPROVE or BLOCK, then a numbered list of findings with file:line. Write it in caveman ultra (no articles or filler, fragments OK); paths, commands and quoted errors stay exact.
 Do not edit files.
 EOF
 
@@ -73,11 +73,14 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
 Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
   Spawn ONE implementer with exactly those paths, then run the reviewer as usual. Anything bigger: say it needs a plan.
 Relay: when I ask for something extra from a worker (e.g. "have it carve", "fix the lint"), SendMessage it to
-  that worker (same session, same branch). For carve: tell it to run /carve; I answer its prompts in its pane.
+  that worker (same session, same branch). For carve: tell it to run /carve; I answer its prompts with `claude attach <name>` (worker panes are read-only).
 Pull request: only when I ask, from the local feature branch, after ci_local.sh is green. Run
   `agent-pr "<title>" "<body>"` (draft PR; it pushes to the `upstream` remote). I approve each call.
   Never use `git push` or `gh`/`tea` directly. Branch name must not start with `worktree-`.
-Style: talk in caveman ultra (a hook reminds you). Code, commits, PR text, security warnings: normal.
+Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, questions, report tables): drop articles, filler,
+  pleasantries, hedging; fragments OK; abbreviate (DB, auth, config, req, res, fn); arrows for causality. Paths, branches, commands,
+  session ids, quoted errors: exact. Code, commits, PR text, security warnings: normal.
+  Not: "I have started the implementer worker. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Reviewer next."
 Never: merge to main, push or open a PR without my ask, publish, touch store/remote-config/signing,
   delete branches with unmerged work.
 EOF
@@ -348,7 +351,9 @@ dir=$(cd "$1" && pwd); name=$(basename "$dir")
 kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/ngisa}
 # the repo's own deny list (agent-init writes it from the detected stack); else the kit's Flutter default
 cfg="$dir/.claude/ngisa-settings.json"; [[ -f $cfg ]] || cfg="$kit/ngisa-settings.json"
-args=(--name "ngisa-$name" --model opus --settings "$cfg")
+# the caveman rule also goes in the system prompt, where Opus weighs it more than a hook reminder
+style='Caveman ultra applies to EVERY message you write to the user: status updates, spawn notices, summaries, questions, report tables. Drop articles (a/an/the), filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality. Paths, branch names, commands, session ids, quoted errors: exact. Code, commits, PR text, security warnings, irreversible-action confirmations: normal prose. Not: "I have started the implementer worker on this fix. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Reviewer next."'
+args=(--name "ngisa-$name" --model opus --settings "$cfg" --append-system-prompt "$style")
 # run from a tab that is a lone shell pane: become the NGISA right here, so no blank shell tab is left behind.
 # Otherwise (several panes, or not in WezTerm) open a new tab.
 me=${WEZTERM_PANE:-}
@@ -375,11 +380,71 @@ others=($(jq --argjson t "$tab" --argjson p "$me" '.[] | select(.tab_id==$t and 
 (( ${#others[@]} < 3 )) || { echo "tab full: 3 agents already shown for $repo" >&2; exit 1; }
 claude --bg --name "$name" --agent "$agent" --model "$model" \
   "$prompt  When finished, send your final report to @ngisa-$repo with SendMessage."
+# panes are read-only views by default (agent-view); AGENT_VIEW=attach gives the full claude attach pane with an input box
+if [[ ${AGENT_VIEW:-view} == attach ]]; then viewer=(claude attach "$name"); else viewer=("$(command -v agent-view)" "$name"); fi
 if (( ${#others[@]} == 0 )); then
-  wezterm cli split-pane --pane-id "$me" --right --percent 55 -- claude attach "$name"
+  wezterm cli split-pane --pane-id "$me" --right --percent 55 -- "${viewer[@]}"
 else
-  wezterm cli split-pane --pane-id "${others[${#others[@]}-1]}" --bottom -- claude attach "$name"
+  wezterm cli split-pane --pane-id "${others[${#others[@]}-1]}" --bottom -- "${viewer[@]}"
 fi
+EOF
+
+cat > ~/bin/agent-view <<'EOF'
+#!/usr/bin/env bash
+# Read-only view of one background worker: header (state, model, worktree, branch) plus the tail of its transcript.
+# No input box, so nothing typed here can reach the worker. To answer a worker that is stuck: claude attach <name>.
+# Env: AGENT_VIEW_INTERVAL (seconds between refreshes, default 2), AGENT_VIEW_ONCE=1 (draw once and exit).
+set -uo pipefail
+name=${1:?usage: agent-view <session-name>}
+interval=${AGENT_VIEW_INTERVAL:-2}
+
+render='
+  def short: (.command // .file_path // .pattern // .description // .prompt // (tostring)) | tostring | gsub("\n"; " ") | .[0:160];
+  fromjson? | select(.type == "assistant" or .type == "user") |
+  if .type == "assistant" then
+    (.message.content[]? | if .type == "text" then "● " + .text
+      elif .type == "tool_use" then "  ⎿ " + .name + " " + (.input | short)
+      else empty end)
+  else
+    (.message.content | if type == "string" then "> " + .[0:240]
+      else (.[]? | if .type == "tool_result" then "    " + ((.content | if type == "array" then (map(.text // "") | join(" ")) else tostring end) | gsub("\n"; " ") | .[0:110]) else empty end)
+      end)
+  end'
+
+draw() {
+  local cols rows info state sid file wt branch model body head
+  cols=$(tput cols 2>/dev/null || echo 100); rows=$(tput lines 2>/dev/null || echo 30)
+  info=$(claude agents --json --all 2>/dev/null | jq -c --arg n "$name" '[.[] | select(.name == $n)] | last // empty' 2>/dev/null)
+  if [[ -z $info ]]; then printf '\033[H\033[2J%s: no such background session (yet)\n' "$name"; return; fi
+  state=$(jq -r '.state // .status // "?"' <<<"$info"); sid=$(jq -r '.sessionId' <<<"$info")
+  file=$(ls "$HOME"/.claude/projects/*/"$sid".jsonl 2>/dev/null | head -1)
+  wt=""; model=""; branch=""
+  if [[ -n $file ]]; then
+    wt=$(tail -n 300 "$file" | jq -r 'select(.cwd) | .cwd' 2>/dev/null | tail -1)
+    model=$(tail -n 300 "$file" | jq -r 'select(.type == "assistant") | .message.model // empty' 2>/dev/null | tail -1)
+  fi
+  [[ -n $wt ]] || wt=$(jq -r '.cwd' <<<"$info")
+  branch=$(git -C "$wt" branch --show-current 2>/dev/null)
+  body=""
+  [[ -n $file ]] && body=$(tail -n 400 "$file" | jq -R -r "$render" 2>/dev/null | cut -c1-"$cols" | tail -n $(( rows - 5 )))
+  # redraw in place: home the cursor, overwrite each line, clear what is left
+  printf '\033[H'
+  printf '\033[1m%s\033[0m  \033[36m%s\033[0m  %s\033[K\n' "$name" "$state" "${model#claude-}"
+  printf '\033[2mworktree\033[0m %s  \033[2mbranch\033[0m \033[35m%s\033[0m\033[K\n' "${wt/#$HOME/~}" "${branch:-?}"
+  if [[ $state == blocked ]]; then
+    printf '\033[33mneeds you: claude attach %s\033[0m\033[K\n' "$name"
+  else
+    printf '\033[K\n'
+  fi
+  printf '\033[2m%*s\033[0m\033[K\n' "$cols" '' | tr ' ' '-'
+  [[ -n $body ]] && printf '%s\n' "$body" | awk '{ printf "%s\033[K\n", $0 }'
+  printf '\033[J'
+}
+
+if [[ ${AGENT_VIEW_ONCE:-} == 1 ]]; then draw; exit 0; fi
+trap 'printf "\033[?25h"; exit 0' INT TERM
+printf '\033[?25l\033[2J'
+while true; do draw; sleep "$interval"; done
 EOF
 
 cat > ~/bin/caveman-ultra-hook <<'EOF'
@@ -389,9 +454,9 @@ set -euo pipefail
 ev=$(jq -r '.hook_event_name // "SessionStart"' 2>/dev/null || true)
 [[ -n $ev ]] || ev=SessionStart
 if [[ $ev == UserPromptSubmit ]]; then
-  msg='CAVEMAN ULTRA active. Drop articles, filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality. Code, commits, PR text, security warnings, irreversible-action confirmations: write normal.'
+  msg='CAVEMAN ULTRA REMINDER. Caveman ultra applies to EVERY message you write to me: status updates, spawn notices, summaries, questions, report tables. Drop articles (a/an/the), filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality (X -> Y). Paths, branch names, commands, session ids, quoted errors: exact. Code, commits, PR titles and bodies, security warnings, irreversible-action confirmations: normal prose. Not: "I'\''ve started the implementer worker on this fix. Nothing is fixed yet, it is still running." Yes: "Implementer spawned (c0be2fe3, fix/moment-edit-save-during-load). Running. Reviewer next."  Worker final reports stay in caveman ultra but keep branch name, files changed, test command + result, and unverified items exact.'
 else
-  msg='CAVEMAN ULTRA active every response until the user says "stop caveman" or "normal mode". Drop articles, filler, pleasantries, hedging. Fragments OK. Short synonyms. Abbreviate prose words (DB, auth, config, req, res, fn). Arrows for causality (X -> Y). Technical terms, code symbols, paths, branch names, commands, quoted errors: exact, never abbreviated. Code, commits, PR titles/bodies, security warnings, irreversible-action confirmations: write normal. Worker final reports stay in caveman ultra but keep branch name, files changed, test command + result, and unverified items exact.'
+  msg='CAVEMAN ULTRA active every response until the user says "stop caveman" or "normal mode". Caveman ultra applies to EVERY message you write to me: status updates, spawn notices, summaries, questions, report tables. Drop articles (a/an/the), filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality (X -> Y). Paths, branch names, commands, session ids, quoted errors: exact. Code, commits, PR titles and bodies, security warnings, irreversible-action confirmations: normal prose. Not: "I'\''ve started the implementer worker on this fix. Nothing is fixed yet, it is still running." Yes: "Implementer spawned (c0be2fe3, fix/moment-edit-save-during-load). Running. Reviewer next."  Worker final reports stay in caveman ultra but keep branch name, files changed, test command + result, and unverified items exact.'
 fi
 jq -n --arg ev "$ev" --arg m "$msg" '{hookSpecificOutput: {hookEventName: $ev, additionalContext: $m}}'
 EOF
@@ -421,8 +486,8 @@ case $url in
 esac
 EOF
 
-chmod +x ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/caveman-ultra-hook ~/bin/agent-pr
-which make-lab repo-tab agent-wall.sh agent-pr caveman-ultra-hook      # all five must print a path
+chmod +x ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/agent-view ~/bin/caveman-ultra-hook ~/bin/agent-pr
+which make-lab repo-tab agent-wall.sh agent-view agent-pr caveman-ultra-hook      # all six must print a path
 ```
 
 (macOS ships bash 3.2, so `agent-wall.sh` here avoids `mapfile` and negative array indexes.)
@@ -463,7 +528,7 @@ In the NGISA tab, type something tiny with 2 independent parts, e.g.:
 > Add a `toString()` to `OcrResult` and a unit test for `BoundsSerializer` edge cases. Brainstorm, then plan, then wait for me.
 
 Approve the spec, approve the plan, then say `go`. The NGISA answers in caveman ultra (the hook in `settings.local.json`). You should see:
-- 2 panes open on the right of the NGISA, one per agent
+- 2 panes open on the right of the NGISA, one per agent. They are read-only views (`agent-view`): a header with state, model, worktree and branch, then the worker's transcript, and no input box. To answer a worker that shows `needs you`, run `claude attach <name>` in a spare pane. `AGENT_VIEW=attach` makes `agent-wall.sh` open the full `claude attach` pane instead.
 - each agent finishes with tests green, then the NGISA says it got a report
 - the NGISA runs the reviewer and shows you one table
 
@@ -487,8 +552,10 @@ To open a draft PR from the lab instead, tell the NGISA "open a PR" once the fea
 | `no kit at …` | step 2 didn't run; `ls /Users/khoamai/Projects/my_proj/ngisa` |
 | NGISA never gets the agent's report | NGISA or agents are in bypass-permissions mode; restart without it |
 | `claude agents` prints a list and exits | `claude update` |
-| agent stuck on "Needs you" | it hit a command not in the allow list; approve it in its pane, then add it to `settings.local.json` in the kit |
+| agent stuck on "Needs you" | it hit a command not in the allow list; `claude attach <name>` in a spare pane, approve it, then add it to `settings.local.json` in the kit |
 | `agent-pr: no 'upstream' remote` | the lab was made before this script existed: `git remote add upstream <real-url>` in the lab |
-| NGISA not in caveman | `which caveman-ultra-hook` must print a path; `ls ~/lab/<repo>/.claude/settings.local.json` must have a `hooks` block |
+| NGISA not in caveman | `which caveman-ultra-hook` must print a path; `ls ~/lab/<repo>/.claude/settings.local.json` must have a `hooks` block. The rule also rides in the NGISA's system prompt (`repo-tab` passes `--append-system-prompt`), so restart the NGISA after changing it. Hook and prompt together only make drift rarer; log any drift in the run log |
+| worker pane blank or garbled | `agent-view` reads the session transcript under `~/.claude/projects/`, an internal format. Use `AGENT_VIEW=attach` until it is fixed |
+| tweakcc customisations gone | Claude Code auto-updated and the new binary is unpatched. Re-run your tweakcc apply script, restart the NGISA, then `claude daemon stop` between tasks so new workers start from the patched binary. `DISABLE_AUTOUPDATER=1` in your shell profile stops the surprise |
 | implementer says setup or the gate cannot run | `agent-init` guessed the stack wrong, or found none. Edit `tool/setup.sh` and `tool/ci_local.sh` in the lab (and in the real repo) by hand: the repo owns them |
 | `tab full` | 3 agents already in this tab; wait or `wezterm cli kill-pane --pane-id N` a finished one |
