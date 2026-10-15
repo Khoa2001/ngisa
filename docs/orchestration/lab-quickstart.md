@@ -469,14 +469,16 @@ cat > ~/bin/agent-view <<'EOF'
 
 No input box, so nothing typed here reaches the worker. To answer a worker that is stuck: claude attach <name>.
 Reads the session transcript under ~/.claude/projects (an internal format; read only) plus git and `claude agents --json`.
-Env: AGENT_VIEW_INTERVAL (seconds between refreshes, default 2), AGENT_VIEW_ONCE=1 (draw once and exit).
-Phases and the gate result are best-effort guesses from the transcript; the activity log is always shown.
+Env: AGENT_VIEW_INTERVAL (seconds between refreshes, default 2), AGENT_VIEW_ONCE=1 (draw once and exit),
+AGENT_VIEW_DETAIL=1 (the full view: phases, counters, now line and log; the default is status only).
+In the full view phases and the gate result are best-effort guesses from the transcript; the activity log is always shown.
 """
 import calendar, glob, json, os, re, shutil, subprocess, sys, time
 
 # four semantic colours; everything else is dim or plain. Every state also has a word or a symbol.
 TEAL, AMBER, GREEN, RED = "38;2;60;196;178", "38;2;231;164;71", "38;2;76;198;138", "38;2;255;107;95"
 RST = "\033[0m"
+DETAIL = os.environ.get("AGENT_VIEW_DETAIL") == "1"
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
@@ -854,6 +856,47 @@ def count_lines(path):
         return 0
 
 
+def simple_view(name, w, state, reviewer, elapsed, branch, commit, subject, verdict, verdict_text, report, pending, last_text,
+                last_activity):
+    """Status only: working, needs you or done (reviewers: APPROVED or BLOCK). Nothing about what the worker is doing."""
+    if state == "blocked":
+        chip = c(AMBER, "needs you")
+    elif state == "done":
+        chip = c(GREEN if verdict != "BLOCK" else RED, verdict or "done") if reviewer and verdict else c(GREEN, "done")
+        if reviewer and verdict == "APPROVED":
+            chip = c(GREEN, "APPROVED")
+    elif state in ("working", "running", "busy"):
+        chip = c(TEAL, "reviewing" if reviewer else "working")
+    else:
+        chip = dim(state)
+    right = chip + dim(f" · {elapsed}")
+    repo = os.path.basename(git(".", "rev-parse", "--show-toplevel"))
+    short = name[len(repo) + 1:] if repo and name.startswith(repo + "-") else name  # the repo prefix says nothing in a pane
+    lines = [split(bold(clip(short, w - vis(right) - 2)), right, w)]
+    task = re.sub(r"-review\d*$", "", short)
+    sub = "reviewing " + task if reviewer else branch
+    if sub:
+        lines.append(dim(clip(sub, w)))
+    lines.append("")
+    if state == "blocked":
+        text = pending["doing"] if pending else (last_text.splitlines()[0] if last_text else "waiting for you")
+        lines.append(c(AMBER, "waiting  ") + clip(text, w - 9))
+        lines.append(dim("answer with: ") + f"claude attach {name}")
+    elif state == "done":
+        if reviewer:
+            m = re.search(r"(\d+)\s+findings?", verdict_text or "") or re.fullmatch(r"\D*(\d+)\D*", verdict_text or "")
+            lines.append(clip(f"{m.group(1)} finding{'s' if m.group(1) != '1' else ''}" if m else (verdict_text or ""), w))
+        else:
+            lines.append(clip(f'{commit} "{subject}"', w) if commit else dim("no commit"))
+    elif last_activity and time.time() - last_activity >= 120:
+        lines.append(dim(f"quiet for {fmt_dur(time.time() - last_activity)}"))
+    if report == "failed":
+        lines.append(c(RED, "the NGISA did not get the result"))
+    while lines and lines[-1] == "":
+        lines.pop()
+    return [fit(l, w) for l in lines]
+
+
 def draw(name):
     size = shutil.get_terminal_size((100, 30))
     w, height = max(size.columns, 40), size.lines
@@ -962,6 +1005,9 @@ def draw(name):
             "blocked": c(AMBER, "needs you"), "done": c(GREEN, "done"), "idle": dim("idle")}.get(state, dim(state))
     short_model = model.replace("claude-", "") or "?"
 
+    if not DETAIL:
+        return simple_view(name, w, state, reviewer, elapsed, branch if in_own else "", commit, subject, verdict,
+                           verdict_text, report, pending, last_text, last_activity)
     right = chip + dim(f" · {short_model} · {elapsed}")
     lines = [split(bold(clip(name, w - vis(right) - 2)), right, w)]
     shown = os.path.relpath(wt, main_wt) if in_own and wt.startswith(main_wt.rstrip("/") + "/") else wt.replace(os.path.expanduser("~"), "~", 1)
@@ -1264,9 +1310,9 @@ In the NGISA tab, type something tiny with 2 independent parts, e.g.:
 > Add a `toString()` to `OcrResult` and a unit test for `BoundsSerializer` edge cases. Brainstorm, then plan, then wait for me.
 
 Approve the spec, approve the plan, then say `go`. The NGISA answers in caveman ultra (the hook in `settings.local.json`). You should see:
-- 2 panes open on the right of the NGISA, one per agent. They are read-only views (`agent-view`): a two-line header (name, state, model, elapsed; branch and worktree), a blocked or done line when it matters (`waiting`, `gate failed`, `report NOT delivered`, `done <hash> ... report delivered`), a phase strip (`✓` done, `▶` now, `·` later, `✗` failed), one counters line (files, `+added −removed`, gate state), a `now` line, and a short plain-language log with times, newest first. No input box. The NGISA's status line adds a `workers` roster (`ngisa-statusline`). To answer a worker that shows `needs you`, run `claude attach <name>` in a spare pane. `AGENT_VIEW=attach` makes `agent-wall.sh` open the full `claude attach` pane instead.
+- 2 panes open on the right of the NGISA, one per agent. They are read-only views (`agent-view`) that show only status: the name, `working`, `needs you` or `done` with the time, one dim line (the branch), and one result line (the commit for an implementer, `N findings` for a reviewer). A reviewer's status reads `reviewing`, then `APPROVED` or `BLOCK`. A worker that has made no move for 2 minutes gets a dim `quiet for Nm` line; a worker that needs you shows the question and `claude attach <name>`; a red line says so if the NGISA never got the worker's result. There is no input box. `AGENT_VIEW_DETAIL=1` brings back the full view (phase strip, counters, a `now` line and a log). The NGISA's status line adds a `workers` roster (`ngisa-statusline`). To answer a worker that shows `needs you`, run `claude attach <name>` in a spare pane. `AGENT_VIEW=attach` makes `agent-wall.sh` open the full `claude attach` pane instead.
 - each agent finishes with tests green, then the NGISA says it got a report
-- a reviewer pane opens to the right of that agent's pane (`<task>-review`, a read-only view like the others: `diff`, `gate files`, `tests`, `verdict`, `report`); its verdict `APPROVED` or `BLOCK` shows in the pane header
+- a reviewer pane opens to the right of that agent's pane (`<task>-review`, a read-only status view like the others); its verdict `APPROVED` or `BLOCK` shows in the pane header
 - the NGISA collects the verdicts and shows you one table
 
 Optional: run `claude agents` in a spare tab to see every agent in one list. `repo-tab` does not open an overview tab.
@@ -1292,7 +1338,7 @@ To open a draft PR from the lab instead, tell the NGISA "open a PR" once the fea
 | agent stuck on "Needs you" | it hit a command not in the allow list; `claude attach <name>` in a spare pane, approve it, then add it to `settings.local.json` in the kit |
 | `agent-pr: no 'upstream' remote` | the lab was made before this script existed: `git remote add upstream <real-url>` in the lab |
 | NGISA not in caveman | `which caveman-ultra-hook` must print a path; `ls ~/lab/<repo>/.claude/settings.local.json` must have a `hooks` block. The rule also rides in the NGISA's system prompt (`repo-tab` passes `--append-system-prompt`), so restart the NGISA after changing it. Hook and prompt together only make drift rarer; log any drift in the run log |
-| worker pane shows a wrong phase tick | the phase strip and gate line are guesses from the transcript (shell commands are classified by pattern); the log under it is the ground truth. `AGENT_VIEW=attach` for the full pane |
+| worker pane shows a wrong phase tick (only with `AGENT_VIEW_DETAIL=1`) | the phase strip and gate line are guesses from the transcript (shell commands are classified by pattern); the log under it is the ground truth. `AGENT_VIEW=attach` for the full pane |
 | no `workers` line in the NGISA status line | `which ngisa-statusline` must print a path, and the NGISA must be started with the new `repo-tab`. Only workers started after the NGISA appear (reviewers too, since they are workers) |
 | worker pane blank or garbled | `agent-view` reads the session transcript under `~/.claude/projects/`, an internal format. Use `AGENT_VIEW=attach` until it is fixed |
 | tweakcc customisations gone | Claude Code auto-updated and the new binary is unpatched. Re-run your tweakcc apply script, restart the NGISA, then `claude daemon stop` between tasks so new workers start from the patched binary. `DISABLE_AUTOUPDATER=1` in your shell profile stops the surprise |
