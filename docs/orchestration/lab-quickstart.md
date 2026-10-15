@@ -393,6 +393,33 @@ others=($(jq --argjson t "$tab" --argjson p "$me" '.[] | select(.tab_id==$t and 
 # pane ids of the panes this script opened, one file per session name; files of closed panes are dropped
 state="${XDG_CACHE_HOME:-$HOME/.cache}/ngisa/panes"
 mkdir -p "$state"
+# equal heights for the given panes (a column), top to bottom: move each pane's lower border until the heights match.
+# WezTerm resizes the active pane's border, so each pane is activated first. Gives up after a few tries; never fails the caller.
+equalize_column() {
+  local ids_json n=$# tries=0 lines total target id rows k i pane_rows
+  (( n > 1 )) || return 0
+  ids_json=$(printf '%s\n' "$@" | jq -s -c .)
+  while (( tries++ < 8 )); do
+    lines=$(wezterm cli list --format json | jq -r --argjson a "$ids_json" \
+      '[.[] | select(.pane_id as $i | $a | index($i))] | sort_by(.top_row) | .[] | "\(.pane_id) \(.size.rows)"') || return 0
+    total=0; i=0; pane_rows=()
+    while read -r id rows; do pane_rows+=("$id:$rows"); total=$(( total + rows )); done <<<"$lines"
+    target=$(( total / n ))
+    k=0; moved=0
+    for entry in "${pane_rows[@]}"; do
+      id=${entry%%:*} rows=${entry##*:}
+      (( ++k < n )) || break
+      if (( rows - target > 1 || target - rows > 1 )); then
+        wezterm cli activate-pane --pane-id "$id" >/dev/null 2>&1 || return 0
+        if (( rows < target )); then dir=Down amt=$(( target - rows )); else dir=Up amt=$(( rows - target )); fi
+        wezterm cli adjust-pane-size --pane-id "$id" "$dir" --amount "$amt" >/dev/null 2>&1 || return 0
+        moved=1; break
+      fi
+    done
+    (( moved )) || return 0
+  done
+  return 0
+}
 alive() { local id; for id in ${others[@]+"${others[@]}"}; do [[ $id == "$1" ]] && return 0; done; return 1; }
 for f in "$state/$repo"-*; do [[ -f $f ]] && ! alive "$(cat "$f")" && rm -f "$f"; done
 # the right-hand column holds the implementer panes; reviewer panes (names ending in -review, -review2 ...) sit beside them
@@ -425,11 +452,15 @@ if [[ -n $target ]]; then
 elif (( ${#impl[@]} == 0 )); then
   new=$(wezterm cli split-pane --pane-id "$me" --right --percent 55 -- "${viewer[@]}")
 else
-  # equal heights: the last pane holds 1/n of the column, so the new one takes n/(n+1) of that pane
+  # first guess at equal heights; equalize_column below fixes what the split leaves uneven
   n=${#impl[@]}
   new=$(wezterm cli split-pane --pane-id "${impl[n-1]}" --bottom --percent $(( 100 * n / (n + 1) )) -- "${viewer[@]}")
 fi
 echo "$new" > "$state/$name"
+if [[ -z $target ]]; then
+  equalize_column ${impl[@]+"${impl[@]}"} "$new"
+  wezterm cli activate-pane --pane-id "$me" >/dev/null 2>&1 || true
+fi
 EOF
 
 cat > ~/bin/agent-view <<'EOF'

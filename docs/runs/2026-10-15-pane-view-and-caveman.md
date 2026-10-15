@@ -98,3 +98,15 @@ From a busy-bees screenshot: worker panes showed an input box, the NGISA answere
 ### Not tested
 - A real reviewer started from the NGISA: whether the permission allow list covers its `git diff`, `diff` and `fvm flutter test` calls in a background session, whether the verdict message reaches the NGISA, and the async BLOCK loop with two rounds.
 - WezTerm: the `--right` split of an implementer pane in a real tab.
+
+## Follow-up: equal heights, for real (2026-10-15)
+- The "equal thirds" fix from the previous PR was wrong. Splitting only the last pane cannot shrink the panes above it: with two panes at 1/2 each, a 66% split of the last one gives 1/2, 1/6, 1/3. The user's screenshot showed three uneven worker panes.
+- Probe in a throwaway WezTerm window: `wezterm cli adjust-pane-size` ignores `--pane-id` and resizes the active pane's lower border, so the pane must be activated first (`activate-pane`, then `adjust-pane-size --pane-id`). Without `activate-pane` nothing moves, or the wrong border moves.
+- New `equalize_column` in `agent-wall.sh`: after an implementer pane is opened it measures the column's pane heights (`wezterm cli list`), activates the first pane that is more than one row off the average, moves its lower border, and re-measures (up to 8 tries, never fails the caller), then gives focus back to the NGISA pane. Reviewer panes are not touched.
+
+### Checked
+- In a throwaway window the column went 11,4,7 -> 7,7,8 rows, and from two disturbed layouts (7,11,4 and 12,7,3) back to 7,7,8. End to end with `agent-wall.sh` (fake `claude`, real WezTerm): 1 pane, then 12+11 rows, then 7,7,8 rows; a review pane opened to the right of its implementer's row at the same height; a fourth implementer stopped with "tab full". The test window was closed afterwards.
+- Quickstart `agent-wall.sh` block equals `~/bin`.
+
+### Not tested
+- A real task with three real workers and the user's window size.
