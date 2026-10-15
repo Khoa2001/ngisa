@@ -7,6 +7,7 @@ want to test on. Nothing here touches `~/.claude` or your real repo.
 
 ```bash
 brew install jq            # the scripts read WezTerm's pane list with jq
+python3 --version          # agent-view and ngisa-statusline are Python 3 scripts (standard library only)
 mkdir -p ~/bin ~/lab
 grep -q 'HOME/bin' ~/.zshrc || echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
@@ -355,6 +356,12 @@ kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/ngisa}
 cfg="$dir/.claude/ngisa-settings.json"; [[ -f $cfg ]] || cfg="$kit/ngisa-settings.json"
 # the caveman rule also goes in the system prompt, where Opus weighs it more than a hook reminder
 style='Caveman ultra applies to EVERY message you write to the user: status updates, spawn notices, summaries, questions, report tables. Drop articles (a/an/the), filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality. Paths, branch names, commands, session ids, quoted errors: exact. Code, commits, PR text, security warnings, irreversible-action confirmations: normal prose. Not: "I have started the implementer worker on this fix. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Reviewer next."'
+# status line: the user's own line, then a roster of this repo's workers (ngisa-statusline). Merged into a temp copy of the settings.
+sl=$(command -v ngisa-statusline || true)
+if [[ -n $sl ]] && jq -e . "$cfg" >/dev/null 2>&1; then
+  tmpcfg=$(mktemp -t ngisa-settings).json
+  jq --arg c "$sl" '. + {statusLine: {type: "command", command: $c}}' "$cfg" > "$tmpcfg" && cfg=$tmpcfg
+fi
 args=(--name "ngisa-$name" --model opus --settings "$cfg" --append-system-prompt "$style")
 # run from a tab that is a lone shell pane: become the NGISA right here, so no blank shell tab is left behind.
 # Otherwise (several panes, or not in WezTerm) open a new tab.
@@ -392,61 +399,412 @@ fi
 EOF
 
 cat > ~/bin/agent-view <<'EOF'
-#!/usr/bin/env bash
-# Read-only view of one background worker: header (state, model, worktree, branch) plus the tail of its transcript.
-# No input box, so nothing typed here can reach the worker. To answer a worker that is stuck: claude attach <name>.
-# Env: AGENT_VIEW_INTERVAL (seconds between refreshes, default 2), AGENT_VIEW_ONCE=1 (draw once and exit).
-set -uo pipefail
-name=${1:?usage: agent-view <session-name>}
-interval=${AGENT_VIEW_INTERVAL:-2}
+#!/usr/bin/env python3
+"""Read-only view of one background worker: state, phases, counters and a plain-language activity feed.
 
-render='
-  def short: (.command // .file_path // .pattern // .description // .prompt // (tostring)) | tostring | gsub("\n"; " ") | .[0:160];
-  fromjson? | select(.type == "assistant" or .type == "user") |
-  if .type == "assistant" then
-    (.message.content[]? | if .type == "text" then "● " + .text
-      elif .type == "tool_use" then "  ⎿ " + .name + " " + (.input | short)
-      else empty end)
-  else
-    (.message.content | if type == "string" then "> " + .[0:240]
-      else (.[]? | if .type == "tool_result" then "    " + ((.content | if type == "array" then (map(.text // "") | join(" ")) else tostring end) | gsub("\n"; " ") | .[0:110]) else empty end)
-      end)
-  end'
+No input box, so nothing typed here reaches the worker. To answer a worker that is stuck: claude attach <name>.
+Reads the session transcript under ~/.claude/projects (an internal format; read only) plus git and `claude agents --json`.
+Env: AGENT_VIEW_INTERVAL (seconds between refreshes, default 2), AGENT_VIEW_ONCE=1 (draw once and exit).
+Phases and the gate line are best-effort guesses from the transcript; the feed is always shown.
+"""
+import glob, json, os, re, shutil, subprocess, sys, time
 
-draw() {
-  local cols rows info state sid file wt branch model body head
-  cols=$(tput cols 2>/dev/null || echo 100); rows=$(tput lines 2>/dev/null || echo 30)
-  info=$(claude agents --json --all 2>/dev/null | jq -c --arg n "$name" '[.[] | select(.name == $n)] | last // empty' 2>/dev/null)
-  if [[ -z $info ]]; then printf '\033[H\033[2J%s: no such background session (yet)\n' "$name"; return; fi
-  state=$(jq -r '.state // .status // "?"' <<<"$info"); sid=$(jq -r '.sessionId' <<<"$info")
-  file=$(ls "$HOME"/.claude/projects/*/"$sid".jsonl 2>/dev/null | head -1)
-  wt=""; model=""; branch=""
-  if [[ -n $file ]]; then
-    wt=$(tail -n 300 "$file" | jq -r 'select(.cwd) | .cwd' 2>/dev/null | tail -1)
-    model=$(tail -n 300 "$file" | jq -r 'select(.type == "assistant") | .message.model // empty' 2>/dev/null | tail -1)
-  fi
-  [[ -n $wt ]] || wt=$(jq -r '.cwd' <<<"$info")
-  branch=$(git -C "$wt" branch --show-current 2>/dev/null)
-  body=""
-  [[ -n $file ]] && body=$(tail -n 400 "$file" | jq -R -r "$render" 2>/dev/null | cut -c1-"$cols" | tail -n $(( rows - 5 )))
-  # redraw in place: home the cursor, overwrite each line, clear what is left
-  printf '\033[H'
-  printf '\033[1m%s\033[0m  \033[36m%s\033[0m  %s\033[K\n' "$name" "$state" "${model#claude-}"
-  printf '\033[2mworktree\033[0m %s  \033[2mbranch\033[0m \033[35m%s\033[0m\033[K\n' "${wt/#$HOME/~}" "${branch:-?}"
-  if [[ $state == blocked ]]; then
-    printf '\033[33mneeds you: claude attach %s\033[0m\033[K\n' "$name"
-  else
-    printf '\033[K\n'
-  fi
-  printf '\033[2m%*s\033[0m\033[K\n' "$cols" '' | tr ' ' '-'
-  [[ -n $body ]] && printf '%s\n' "$body" | awk '{ printf "%s\033[K\n", $0 }'
-  printf '\033[J'
-}
+# four semantic colours, everything else dim or plain
+TEAL, AMBER, GREEN, RED = "38;2;60;196;178", "38;2;231;164;71", "38;2;76;198;138", "38;2;255;107;95"
+VIOLET = "38;2;165;149;255"
+RST = "\033[0m"
 
-if [[ ${AGENT_VIEW_ONCE:-} == 1 ]]; then draw; exit 0; fi
-trap 'printf "\033[?25h"; exit 0' INT TERM
-printf '\033[?25l\033[2J'
-while true; do draw; sleep "$interval"; done
+
+def c(code, s):
+    return f"\033[{code}m{s}{RST}"
+
+
+def dim(s):
+    return c("2", s)
+
+
+ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def fit(s, width):
+    """Truncate to `width` visible characters, keeping colour codes intact."""
+    out, vis, i = [], 0, 0
+    while i < len(s):
+        m = ANSI.match(s, i)
+        if m:
+            out.append(m.group(0)); i = m.end(); continue
+        if vis >= width:
+            break
+        out.append(s[i]); vis += 1; i += 1
+    return "".join(out) + RST
+
+
+def run(args, cwd=None, timeout=5):
+    try:
+        return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout).stdout
+    except Exception:
+        return ""
+
+
+def short_path(p, wt):
+    if not p:
+        return ""
+    for base in (wt, os.path.expanduser("~")):
+        if base and p.startswith(base.rstrip("/") + "/"):
+            return p[len(base.rstrip("/")) + 1:]
+    return p
+
+
+def result_text(res):
+    if res is None:
+        return ""
+    cont = res.get("content")
+    if isinstance(cont, list):
+        cont = " ".join(b.get("text", "") for b in cont if isinstance(b, dict))
+    return str(cont or "")
+
+
+TEST_RE = re.compile(r"(flutter|dart) test|phpunit|php tests/|pytest|npm (run )?test|cargo test|go test")
+CODE_RE = re.compile(r"(sed -i|perl -pi|\btee\b|cat\s*>|>>|apply_patch|python3? .*(write|open\())")
+
+
+def classify(name, inp, wt):
+    """-> (phase|None, kind, text). kind picks the colour."""
+    inp = inp or {}
+    if name == "Read":
+        return None, "read", "read " + short_path(inp.get("file_path"), wt)
+    if name in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
+        return "code", "code", "edit " + short_path(inp.get("file_path") or inp.get("notebook_path"), wt)
+    if name == "Grep":
+        return None, "read", "search " + str(inp.get("pattern", ""))[:60]
+    if name == "Glob":
+        return None, "read", "find " + str(inp.get("pattern", ""))[:60]
+    if name == "SendMessage":
+        to = str(inp.get("to", ""))
+        return "report", "report", ("report to NGISA" if "ngisa" in to else "message " + to)
+    if name in ("ToolSearch", "ListAgents", "TodoWrite", "Skill"):
+        return None, "noise", {"ToolSearch": "load tool", "ListAgents": "list agents"}.get(name, name.lower())
+    if name == "Bash":
+        cmd = str(inp.get("command", "")).strip()
+        first = cmd.splitlines()[0] if cmd else ""
+        if "worktree-include" in cmd:
+            return "setup", "setup", "copy gate files into the worktree"
+        if "tool/setup.sh" in cmd:
+            return "setup", "setup", "setup (tool/setup.sh)"
+        if "ci_local.sh" in cmd:
+            arg = cmd.split("ci_local.sh", 1)[1].strip().split("\n")[0][:50]
+            return "gate", "gate", "gate" + (" " + arg if arg else " (full)")
+        if re.search(r"git\s+commit", cmd):
+            m = re.search(r"-m\s+[\"']?(?:\$\(cat <<'?EOF'?\s*)?([^\"'\n]{3,60})", cmd)
+            return "commit", "commit", "commit" + (f' "{m.group(1).strip()}"' if m else "")
+        if re.search(r"git\s+worktree\s+add", cmd):
+            return "setup", "setup", "create worktree"
+        if TEST_RE.search(cmd):
+            m = re.search(r"(test/\S+|tests/\S+)", cmd)
+            return "test", "test", "test " + (m.group(1).rstrip("'\"") if m else "")
+        if re.search(r"(dart format|flutter analyze|dart analyze|php -l|vendor/bin/(pint|phpstan))", cmd):
+            return None, "test", "check: " + first[:60]
+        m = re.match(r"(?:cd\s+\S+\s*&&\s*)?git\s+(\S+)", first)
+        if m:
+            return None, "git", "git " + m.group(1)
+        if CODE_RE.search(cmd):
+            return "code", "code", "edit via shell"
+        return None, "run", "run " + first[:70]
+    return None, "run", name.lower()
+
+
+KIND_STYLE = {"read": "2", "noise": "2", "code": "1", "run": "0", "git": "0", "setup": TEAL, "test": TEAL,
+              "gate": TEAL, "commit": GREEN, "report": VIOLET}
+PHASES = ["setup", "code", "test", "gate", "commit", "report"]
+
+
+def load_session(name):
+    out = run(["claude", "agents", "--json", "--all"])
+    try:
+        rows = [r for r in json.loads(out) if r.get("name") == name]
+    except Exception:
+        rows = []
+    return rows[-1] if rows else None
+
+
+def parse(path):
+    """-> events (list of dict), cwd, model, last_ts, pending (event without result), last_text"""
+    calls, events, cwd, model, last_ts, last_text = {}, [], None, "", None, ""
+    try:
+        with open(path, errors="replace") as f:
+            lines = f.readlines()[-2500:]
+    except Exception:
+        return [], None, "", None, None, ""
+    for line in lines:
+        try:
+            r = json.loads(line)
+        except Exception:
+            continue
+        if r.get("cwd"):
+            cwd = r["cwd"]
+        if r.get("timestamp"):
+            last_ts = r["timestamp"]
+        msg = r.get("message") or {}
+        content = msg.get("content")
+        if r.get("type") == "assistant":
+            model = msg.get("model") or model
+            for b in content if isinstance(content, list) else []:
+                if b.get("type") == "text" and b.get("text", "").strip():
+                    last_text = b["text"].strip()
+                    events.append({"kind": "say", "text": last_text})
+                elif b.get("type") == "tool_use":
+                    ev = {"kind": "call", "id": b.get("id"), "name": b.get("name"), "input": b.get("input"), "result": None}
+                    calls[b.get("id")] = ev
+                    events.append(ev)
+        elif r.get("type") == "user" and isinstance(content, list):
+            for b in content:
+                if b.get("type") == "tool_result" and b.get("tool_use_id") in calls:
+                    calls[b["tool_use_id"]]["result"] = b
+    return events, cwd, model, last_ts, last_text
+
+
+def iso_to_epoch(ts):
+    try:
+        return time.mktime(time.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S")) - time.timezone
+    except Exception:
+        return None
+
+
+def fmt_dur(sec):
+    sec = max(0, int(sec))
+    return f"{sec // 3600}h{sec % 3600 // 60:02d}m" if sec >= 3600 else (f"{sec // 60}m{sec % 60:02d}s" if sec >= 60 else f"{sec}s")
+
+
+def git(wt, *args):
+    return run(["git", "-C", wt, *args]).strip()
+
+
+def draw(name):
+    size = shutil.get_terminal_size((100, 30))
+    width, height = size.columns, size.lines
+    info = load_session(name)
+    if not info:
+        return [f"{name}: no such background session (yet)"]
+    state = info.get("state") or info.get("status") or "?"
+    sid = info.get("sessionId", "")
+    found = glob.glob(os.path.expanduser(f"~/.claude/projects/*/{sid}.jsonl"))
+    events, cwd, model, last_ts, last_text = parse(found[0]) if found else ([], None, "", None, "")
+    wt = cwd or info.get("cwd") or "."
+
+    # classify every call once
+    feed, phases_hit, cur_phase, gate_line, report_failed, pending = [], set(), None, None, False, None
+    for ev in events:
+        if ev["kind"] == "say":
+            feed.append(("say", ev["text"].splitlines()[0][:200], False))
+            continue
+        phase, kind, text = classify(ev["name"], ev["input"], wt)
+        res = ev["result"]
+        failed = bool(res and res.get("is_error"))
+        if ev["name"] == "SendMessage" and res is not None:
+            if failed or re.search(r'"success"\s*:\s*false|not reachable|tool_use_error', result_text(res)):
+                failed = True
+                report_failed = True
+                text = "report NOT delivered"
+        if res is None:
+            pending = (phase, kind, text)
+        if phase:
+            phases_hit.add(phase)
+            cur_phase = phase
+        if phase == "gate" and res is not None:
+            body = [l.strip() for l in result_text(res).splitlines() if l.strip()]
+            gate_line = body[-1][:100] if body else None
+        feed.append((kind, text, failed, res is None))
+
+    main = git(wt, "worktree", "list", "--porcelain").splitlines()
+    main = main[0][9:] if main and main[0].startswith("worktree ") else wt
+    base = git(main, "branch", "--show-current") or "main"
+    branch = git(wt, "branch", "--show-current") or "?"
+    changed, commit = set(), ""
+    if os.path.realpath(wt) != os.path.realpath(main):
+        changed |= set(git(wt, "diff", "--name-only", f"{base}...HEAD").splitlines())
+        changed |= {l[3:] for l in git(wt, "status", "--porcelain").splitlines() if l[3:] and not l[3:].startswith("tool/")}
+        if git(wt, "rev-list", "--count", f"{base}..HEAD") not in ("", "0"):
+            commit = git(wt, "log", "-1", "--format=%h")
+
+    if changed:
+        phases_hit.add("code")
+    started = (info.get("startedAt") or 0) / 1000
+    end = iso_to_epoch(last_ts) if state == "done" and last_ts else time.time()
+    elapsed = fmt_dur((end or time.time()) - started) if started else "?"
+
+    chip = {"working": c(TEAL, "working"), "running": c(TEAL, "working"), "blocked": c(AMBER, "blocked"),
+            "done": c(GREEN, "done"), "idle": dim("idle")}.get(state, dim(state))
+    lines = [f"{c('1', name)}  {chip}  {dim(model.replace('claude-', ''))}",
+             f"{dim('branch')} {c(VIOLET, branch)}  {dim('worktree')} {wt.replace(os.path.expanduser('~'), '~', 1)}"]
+
+    # phase strip
+    parts = []
+    for p in PHASES:
+        if p == "report" and report_failed:
+            parts.append(c(RED, "✗ report"))
+        elif p in phases_hit and (p != cur_phase or state == "done"):
+            parts.append(c(GREEN, "✓ ") + p)
+        elif p == cur_phase and state != "done":
+            parts.append(c(TEAL, "▶ " + p))
+        else:
+            parts.append(dim("· " + p))
+    lines.append("  ".join(parts))
+
+    ctr = [elapsed, f"{len(changed)} file{'s' if len(changed) != 1 else ''}"]
+    if commit:
+        ctr.append("commit " + c(GREEN, commit))
+    lines.append(dim("  ·  ").join(ctr))
+    if gate_line:
+        bad = re.search(r"fail|error|exit [1-9]|not clean|FAILED", gate_line, re.I)
+        lines.append(dim("gate ") + c(RED if bad else (GREEN if re.search(r"\bok\b|exit 0|passed", gate_line, re.I) else "2"), gate_line))
+
+    if state == "blocked":
+        if pending:
+            lines.append(c(AMBER, "waiting on: " + pending[2]) + dim(f"   claude attach {name}"))
+        elif last_text and not report_failed:
+            label = "asks: " if last_text.rstrip().endswith("?") else "stopped: "
+            lines.append(c(AMBER, label + last_text.splitlines()[0][:120]) + dim(f"   claude attach {name}"))
+        elif report_failed:
+            lines.append(c(AMBER, "waiting for you") + dim(f"   claude attach {name}"))
+        else:
+            lines.append(c(AMBER, f"needs you: claude attach {name}"))
+    if report_failed:
+        lines.append(c(RED, "report NOT delivered: the NGISA was not reachable, so it never saw this result"))
+
+    lines.append(dim("─" * width))
+    room = max(3, height - len(lines) - 1)
+    body, prev, count = [], None, 0
+    collapsed = []
+    for item in feed:
+        key = (item[0], item[1])
+        if collapsed and collapsed[-1][0] == key:
+            collapsed[-1][1] += 1
+        else:
+            collapsed.append([key, 1, item])
+    feed2 = [(it[0], it[1] + (f" ×{n}" if n > 1 else ""), *it[2:]) for _, n, it in collapsed]
+    for item in feed2[-room * 2:]:
+        kind, text, failed = item[0], item[1], item[2]
+        waiting = len(item) > 3 and item[3]
+        text = text.replace(os.path.expanduser("~"), "~")
+        if kind == "say":
+            body.append("  " + c(VIOLET, "» ") + text)
+            continue
+        style = RED if failed else KIND_STYLE.get(kind, "0")
+        body.append("  " + c(style, "● " if not waiting else "◌ ") + c(style, text) + (dim(" …") if waiting else ""))
+    lines += body[-room:]
+    return [fit(l, width) for l in lines]
+
+
+def main():
+    name = sys.argv[1] if len(sys.argv) > 1 else sys.exit("usage: agent-view <session-name>")
+    interval = float(os.environ.get("AGENT_VIEW_INTERVAL", "2"))
+    once = os.environ.get("AGENT_VIEW_ONCE") == "1"
+    def paint():
+        lines = draw(name)
+        sys.stdout.write("\033[H" + "".join(l + "\033[K\n" for l in lines) + "\033[J")
+        sys.stdout.flush()
+    if once:
+        paint(); return
+    sys.stdout.write("\033[?25l\033[2J")
+    try:
+        while True:
+            paint(); time.sleep(interval)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        sys.stdout.write("\033[?25h"); sys.stdout.flush()
+
+
+if __name__ == "__main__":
+    main()
+EOF
+
+cat > ~/bin/ngisa-statusline <<'EOF'
+#!/usr/bin/env python3
+"""Status line for the NGISA: your own status line, then one extra line listing this repo's background workers.
+
+Reads the status-line JSON on stdin. Runs your own status-line command (NGISA_BASE_STATUSLINE, else statusLine.command from
+~/.claude/settings.json, which is only read) with the same input and prints its output first. Any failure here leaves your
+own line untouched. The reviewer runs inside the NGISA, so it is not a background session and is not listed.
+"""
+import hashlib, json, os, subprocess, sys, tempfile, time
+
+TEAL, AMBER, GREEN = "38;2;60;196;178", "38;2;231;164;71", "38;2;76;198;138"
+
+
+def col(code, s):
+    return f"\033[{code}m{s}\033[0m"
+
+
+def base_output(raw):
+    cmd = os.environ.get("NGISA_BASE_STATUSLINE")
+    if not cmd:
+        try:
+            cmd = json.load(open(os.path.expanduser("~/.claude/settings.json"))).get("statusLine", {}).get("command")
+        except Exception:
+            cmd = None
+    if not cmd:
+        return ""
+    try:
+        return subprocess.run(["sh", "-c", cmd], input=raw, capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return ""
+
+
+def agents(cwd):
+    cache = os.path.join(tempfile.gettempdir(), ".ngisa_roster_" + hashlib.md5(cwd.encode()).hexdigest())
+    try:
+        if time.time() - os.path.getmtime(cache) < 3:
+            return json.load(open(cache))
+    except Exception:
+        pass
+    out = subprocess.run(["claude", "agents", "--json", "--cwd", cwd], capture_output=True, text=True, timeout=3).stdout
+    data = json.loads(out)
+    try:
+        json.dump(data, open(cache, "w"))
+    except Exception:
+        pass
+    return data
+
+
+def roster(j):
+    cwd = (j.get("workspace") or {}).get("current_dir") or j.get("cwd") or os.getcwd()
+    rows = agents(cwd)
+    me = [r for r in rows if r.get("kind") == "interactive" and str(r.get("name", "")).startswith("ngisa-")]
+    t0 = max((r.get("startedAt") or 0) for r in me) if me else 0
+    prefix = os.path.basename(cwd.rstrip("/")) + "-"
+    parts = []
+    for r in sorted((r for r in rows if r.get("kind") == "background" and (r.get("startedAt") or 0) >= t0),
+                    key=lambda r: r.get("startedAt") or 0):
+        name = str(r.get("name", ""))
+        name = name[len(prefix):] if name.startswith(prefix) else name
+        st = r.get("state") or r.get("status") or "?"
+        age = int(time.time() - (r.get("startedAt") or 0) / 1000)
+        t = f"{age // 3600}h" if age >= 3600 else (f"{age // 60}m" if age >= 60 else f"{age}s")
+        if st == "blocked":
+            parts.append(f"{name} " + col(AMBER, "needs you"))
+        elif st == "done":
+            parts.append(f"{name} " + col(GREEN, "done ✓"))
+        elif st in ("working", "running"):
+            parts.append(f"{name} " + col(TEAL, f"working {t}"))
+        else:
+            parts.append(f"{name} \033[2m{st}\033[0m")
+    return ("\033[2mworkers\033[0m  " + "  \033[2m|\033[0m  ".join(parts)) if parts else ""
+
+
+def main():
+    raw = sys.stdin.read()
+    out = base_output(raw)
+    sys.stdout.write(out if out.endswith("\n") or not out else out + "\n")
+    try:
+        line = roster(json.loads(raw))
+        if line:
+            sys.stdout.write(line + "\n")
+    except Exception:
+        pass
+
+
+main()
 EOF
 
 cat > ~/bin/worktree-include <<'EOF'
@@ -509,8 +867,8 @@ case $url in
 esac
 EOF
 
-chmod +x ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/agent-view ~/bin/worktree-include ~/bin/caveman-ultra-hook ~/bin/agent-pr
-which make-lab repo-tab agent-wall.sh agent-view worktree-include agent-pr caveman-ultra-hook      # all seven must print a path
+chmod +x ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/agent-view ~/bin/ngisa-statusline ~/bin/worktree-include ~/bin/caveman-ultra-hook ~/bin/agent-pr
+which make-lab repo-tab agent-wall.sh agent-view ngisa-statusline worktree-include agent-pr caveman-ultra-hook      # all eight must print a path
 ```
 
 (macOS ships bash 3.2, so `agent-wall.sh` here avoids `mapfile` and negative array indexes.)
@@ -551,7 +909,7 @@ In the NGISA tab, type something tiny with 2 independent parts, e.g.:
 > Add a `toString()` to `OcrResult` and a unit test for `BoundsSerializer` edge cases. Brainstorm, then plan, then wait for me.
 
 Approve the spec, approve the plan, then say `go`. The NGISA answers in caveman ultra (the hook in `settings.local.json`). You should see:
-- 2 panes open on the right of the NGISA, one per agent. They are read-only views (`agent-view`): a header with state, model, worktree and branch, then the worker's transcript, and no input box. To answer a worker that shows `needs you`, run `claude attach <name>` in a spare pane. `AGENT_VIEW=attach` makes `agent-wall.sh` open the full `claude attach` pane instead.
+- 2 panes open on the right of the NGISA, one per agent. They are read-only views (`agent-view`): a header with state, model, branch and worktree, a phase strip (setup, code, test, gate, commit, report), counters (elapsed time, files changed, commit, last gate line), a plain-language activity feed, and no input box. The NGISA's status line adds a `workers` roster (`ngisa-statusline`). To answer a worker that shows `needs you`, run `claude attach <name>` in a spare pane. `AGENT_VIEW=attach` makes `agent-wall.sh` open the full `claude attach` pane instead.
 - each agent finishes with tests green, then the NGISA says it got a report
 - the NGISA runs the reviewer and shows you one table
 
@@ -578,6 +936,8 @@ To open a draft PR from the lab instead, tell the NGISA "open a PR" once the fea
 | agent stuck on "Needs you" | it hit a command not in the allow list; `claude attach <name>` in a spare pane, approve it, then add it to `settings.local.json` in the kit |
 | `agent-pr: no 'upstream' remote` | the lab was made before this script existed: `git remote add upstream <real-url>` in the lab |
 | NGISA not in caveman | `which caveman-ultra-hook` must print a path; `ls ~/lab/<repo>/.claude/settings.local.json` must have a `hooks` block. The rule also rides in the NGISA's system prompt (`repo-tab` passes `--append-system-prompt`), so restart the NGISA after changing it. Hook and prompt together only make drift rarer; log any drift in the run log |
+| worker pane shows a wrong phase tick | the phase strip and gate line are guesses from the transcript (shell commands are classified by pattern); the activity feed under it is the ground truth. `AGENT_VIEW=attach` for the full pane |
+| no `workers` line in the NGISA status line | `which ngisa-statusline` must print a path, and the NGISA must be started with the new `repo-tab`. Only workers started after the NGISA appear; the in-process reviewer never does |
 | worker pane blank or garbled | `agent-view` reads the session transcript under `~/.claude/projects/`, an internal format. Use `AGENT_VIEW=attach` until it is fixed |
 | tweakcc customisations gone | Claude Code auto-updated and the new binary is unpatched. Re-run your tweakcc apply script, restart the NGISA, then `claude daemon stop` between tasks so new workers start from the patched binary. `DISABLE_AUTOUPDATER=1` in your shell profile stops the surprise |
 | implementer says setup or the gate cannot run | `agent-init` guessed the stack wrong, or found none. Edit `tool/setup.sh` and `tool/ci_local.sh` in the lab (and in the real repo) by hand: the repo owns them |

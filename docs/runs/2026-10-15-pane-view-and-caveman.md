@@ -28,3 +28,19 @@ From a busy-bees screenshot: worker panes showed an input box, the NGISA answere
 - Fix: new `~/bin/worktree-include` (in the quickstart): run inside a worktree, it copies the literal paths that the main checkout's `.worktreeinclude` lists and the worktree lacks. `Bash(worktree-include)` is in the allow list; implementer step 1 runs it when `tool/setup.sh` is missing; `orchestrating.md` tells the NGISA to say so in the task text when it makes the worktree itself.
 - Checked: in a throwaway repo a plain worktree had no `tool/`; `worktree-include` copied the files, skipped `..`, glob and absolute entries, and did nothing on a second run or in the main checkout. A real `claude -p --agent implementer` run in such a worktree (cost 0.13): setup.sh failed with exit 127, the worker ran `worktree-include`, retried, and got SETUP-RAN.
 - Not changed: the user's NGISA memory (outside this repo). Still open: the busy-bees baseline (`tool/known_failures.txt` missing) is the user's `--record-baseline` run.
+
+## Follow-up: pane status (2026-10-15)
+- The read-only pane printed raw transcript lines (`SendMessage {"to":...`). `agent-view` is now a Python 3 script (standard library only): header (state, model, branch, worktree), a phase strip (setup, code, test, gate, commit, report), counters (elapsed, files changed, commit hash, last gate line), a blocked line that says what the worker waits for, and a plain-language activity feed. Four colours: teal working, amber needs you, green done, red error; everything else dim.
+- Files changed and the commit come from git, not from tool calls: the busy-bees worker edited through `Bash`, never `Edit`. Gate pass or fail is read from output text because a failing shell command still has `is_error: false`. Phases are best-effort guesses; the feed is the ground truth.
+- A failed `SendMessage` to the NGISA now shows in red as `report NOT delivered`. The user's `inputtest` worker hit this ("No agent named 'ngisa-busy-bees' is reachable"): the NGISA in tab 2 was started after the worker, so it may be timing. Not yet re-tested with the NGISA already open.
+- `ngisa-statusline` (new): runs the user's own status-line command first (read from `~/.claude/settings.json`, never written), then one `workers` line from `claude agents --json --cwd`, only workers started after this NGISA, cached 3 s. `repo-tab` merges it into a temp copy of the lab's settings, so existing labs work. The in-process reviewer is not a background session and is not listed.
+
+### Checked
+- Replay on three real transcripts at width 80 and 110: finished worker (phases and 3 files, commit 1d430a7, 4m31s), blocked worker (`stopped:` line with the attach hint), `inputtest` (red report line). No raw JSON in the feed.
+- `ngisa-statusline` with the user's real status line: output identical to the base line when there are no workers; with a fake `claude` it adds `workers  api done ✓ | sync needs you | cache working 2m` and drops a worker older than the NGISA. With `claude` missing from PATH or bad stdin, the base line still prints.
+- `repo-tab` syntax; merged settings keep the deny rules and add the status line. The viewer loop runs in a pty and stops cleanly.
+- Quickstart script blocks equal `~/bin`.
+
+### Not tested
+- A real WezTerm run: panes and the roster over a whole task, and whether report delivery works with the NGISA already open.
+- The old bash `agent-view` is kept at `~/bin/agent-view.bash-backup` until the merge.

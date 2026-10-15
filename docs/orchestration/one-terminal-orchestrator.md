@@ -278,7 +278,7 @@ Notes:
   each agent reports to its own repo's NGISA (`@ngisa-scanner`).
 - Each agent is a background session started from the repo, so its worktree is in that repo's
   `.claude/worktrees/`. Repos never share worktrees.
-- Panes are read-only views (`agent-view`: a header with state, model, worktree and branch, then the worker's transcript; no input box). To answer a worker that shows `needs you`, `claude attach <name>` in a spare pane. Closing a pane never stops the agent; `wezterm cli kill-pane` when done.
+- Panes are read-only views (`agent-view`: header with state, model, branch and worktree; a phase strip; counters for elapsed time, files changed, commit and last gate line; a plain-language activity feed; no input box). The NGISA's status line shows a `workers` roster (`ngisa-statusline`, wired in by `repo-tab`). To answer a worker that shows `needs you`, `claude attach <name>` in a spare pane. Closing a pane never stops the agent; `wezterm cli kill-pane` when done.
 - The "tab full" check counts panes, not running agents. If you closed a pane early, the agent still
   runs and still counts against your quota; check `claude agents`.
 - Check `wezterm cli list --format json` on your version prints `tab_id`; it should.
