@@ -400,19 +400,19 @@ EOF
 
 cat > ~/bin/agent-view <<'EOF'
 #!/usr/bin/env python3
-"""Read-only view of one background worker: state, phases, counters and a plain-language activity feed.
+"""Read-only view of one background worker: state, phases, counters and a plain-language activity log.
 
 No input box, so nothing typed here reaches the worker. To answer a worker that is stuck: claude attach <name>.
 Reads the session transcript under ~/.claude/projects (an internal format; read only) plus git and `claude agents --json`.
 Env: AGENT_VIEW_INTERVAL (seconds between refreshes, default 2), AGENT_VIEW_ONCE=1 (draw once and exit).
-Phases and the gate line are best-effort guesses from the transcript; the feed is always shown.
+Phases and the gate result are best-effort guesses from the transcript; the activity log is always shown.
 """
-import glob, json, os, re, shutil, subprocess, sys, time
+import calendar, glob, json, os, re, shutil, subprocess, sys, time
 
-# four semantic colours, everything else dim or plain
+# four semantic colours; everything else is dim or plain. Every state also has a word or a symbol.
 TEAL, AMBER, GREEN, RED = "38;2;60;196;178", "38;2;231;164;71", "38;2;76;198;138", "38;2;255;107;95"
-VIOLET = "38;2;165;149;255"
 RST = "\033[0m"
+ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
 def c(code, s):
@@ -423,20 +423,43 @@ def dim(s):
     return c("2", s)
 
 
-ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+def bold(s):
+    return c("1", s)
+
+
+def vis(s):
+    return len(ANSI.sub("", s))
 
 
 def fit(s, width):
-    """Truncate to `width` visible characters, keeping colour codes intact."""
-    out, vis, i = [], 0, 0
+    """Truncate to `width` visible characters, keeping colour codes intact (safety net after clip)."""
+    out, n, i = [], 0, 0
     while i < len(s):
         m = ANSI.match(s, i)
         if m:
             out.append(m.group(0)); i = m.end(); continue
-        if vis >= width:
+        if n >= width:
             break
-        out.append(s[i]); vis += 1; i += 1
+        out.append(s[i]); n += 1; i += 1
     return "".join(out) + RST
+
+
+def clip(s, width):
+    """Cut a plain string at a word boundary, with an ellipsis."""
+    s = " ".join(str(s).split())
+    if width < 2:
+        return ""
+    if len(s) <= width:
+        return s
+    cut = s[: width - 1]
+    if " " in cut[width // 2:]:
+        cut = cut[: cut.rstrip().rfind(" ")]
+    return cut.rstrip(" ,;:/") + "…"
+
+
+def split(left, right, width):
+    gap = width - vis(left) - vis(right)
+    return left + " " * max(gap, 2) + right
 
 
 def run(args, cwd=None, timeout=5):
@@ -446,6 +469,10 @@ def run(args, cwd=None, timeout=5):
         return ""
 
 
+def git(wt, *args):
+    return run(["git", "-C", wt, *args]).strip()
+
+
 def short_path(p, wt):
     if not p:
         return ""
@@ -453,6 +480,17 @@ def short_path(p, wt):
         if base and p.startswith(base.rstrip("/") + "/"):
             return p[len(base.rstrip("/")) + 1:]
     return p
+
+
+def plain_error(text):
+    """One readable line from a tool error, without JSON or tags."""
+    text = re.sub(r"</?tool_use_error>", "", text or "").strip()
+    try:
+        d = json.loads(text)
+        text = str(d.get("message") or d.get("error") or text) if isinstance(d, dict) else text
+    except Exception:
+        pass
+    return text.splitlines()[0] if text else ""
 
 
 def result_text(res):
@@ -466,56 +504,123 @@ def result_text(res):
 
 TEST_RE = re.compile(r"(flutter|dart) test|phpunit|php tests/|pytest|npm (run )?test|cargo test|go test")
 CODE_RE = re.compile(r"(sed -i|perl -pi|\btee\b|cat\s*>|>>|apply_patch|python3? .*(write|open\())")
+FAIL_RE = re.compile(r"fail|error|exit [1-9]|not clean|FAILED|\bBLOCK", re.I)
+PASS_RE = re.compile(r"\bok\b|exit 0|passed|all tests passed|\bOK \(", re.I)
+# shell commands that only look around; they fold into "checked repo state"
+LOOK = {"pwd", "ls", "cat", "head", "tail", "echo", "test", "wc", "which", "stat", "find", "grep", "rg", "sort", "cd",
+        "true", "printf", "basename", "dirname", "readlink", "tree", "file", "sed", "awk", "cut", "tr", "uniq", "xargs"}
+GIT_LOOK = {"status", "branch", "log", "diff", "rev-parse", "show", "rev-list", "remote", "config", "ls-files",
+            "describe", "merge-base", "symbolic-ref", "blame", "fetch", "stash"}
+
+
+def segments(cmd):
+    return [s.strip() for s in re.split(r"\s*(?:&&|\|\||;|\||\n)\s*", cmd) if s.strip()]
+
+
+def only_looks(cmd):
+    segs = segments(cmd)
+    if not segs:
+        return False
+    for seg in segs:
+        w = seg.split()
+        if "=" in w[0] and not w[0].startswith("-"):
+            continue
+        if w[0] == "git":
+            w = [x for i, x in enumerate(w) if not (x == "-C" or (i and w[i - 1] == "-C"))]
+            sub = next((x for x in w[1:] if not x.startswith("-")), "")
+            if sub == "worktree":
+                if "add" in w or "remove" in w:
+                    return False
+            elif sub not in GIT_LOOK:
+                return False
+        elif w[0] not in LOOK:
+            return False
+    return True
+
+
+def first_action(cmd):
+    """First segment that is not just looking around; names the command in the log."""
+    for seg in segments(cmd):
+        w = seg.split()
+        if not w or ("=" in w[0] and not w[0].startswith("-")) or w[0] in LOOK:
+            continue
+        return seg
+    return segments(cmd)[0] if segments(cmd) else ""
 
 
 def classify(name, inp, wt):
-    """-> (phase|None, kind, text). kind picks the colour."""
+    """-> (phase|None, kind, doing, did). `doing` is the present form for the now line, `did` the log form."""
     inp = inp or {}
     if name == "Read":
-        return None, "read", "read " + short_path(inp.get("file_path"), wt)
-    if name in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
-        return "code", "code", "edit " + short_path(inp.get("file_path") or inp.get("notebook_path"), wt)
+        f = short_path(inp.get("file_path"), wt)
+        return None, "read", "reading " + f, "read " + f
+    if name in ("Edit", "MultiEdit", "NotebookEdit"):
+        f = short_path(inp.get("file_path") or inp.get("notebook_path"), wt)
+        return "code", "code", "editing " + f, "edited " + f
+    if name == "Write":
+        f = short_path(inp.get("file_path"), wt)
+        return "code", "code", "writing " + f, "wrote " + f
     if name == "Grep":
-        return None, "read", "search " + str(inp.get("pattern", ""))[:60]
+        p = str(inp.get("pattern", ""))
+        return None, "read", f"searching for {p}", f"searched for {p}"
     if name == "Glob":
-        return None, "read", "find " + str(inp.get("pattern", ""))[:60]
+        p = str(inp.get("pattern", ""))
+        return None, "read", f"looking for files {p}", f"looked for files {p}"
     if name == "SendMessage":
         to = str(inp.get("to", ""))
-        return "report", "report", ("report to NGISA" if "ngisa" in to else "message " + to)
+        if "ngisa" in to:
+            return "report", "report", "sending the report to the NGISA", "reported to the NGISA"
+        return "report", "report", "messaging " + to, "messaged " + to
     if name in ("ToolSearch", "ListAgents", "TodoWrite", "Skill"):
-        return None, "noise", {"ToolSearch": "load tool", "ListAgents": "list agents"}.get(name, name.lower())
+        return None, "noise", "", ""
     if name == "Bash":
         cmd = str(inp.get("command", "")).strip()
-        first = cmd.splitlines()[0] if cmd else ""
+        first = first_action(cmd)
         if "worktree-include" in cmd:
-            return "setup", "setup", "copy gate files into the worktree"
+            return "setup", "setup", "copying gate files into the worktree", "copied gate files into the worktree"
         if "tool/setup.sh" in cmd:
-            return "setup", "setup", "setup (tool/setup.sh)"
+            return "setup", "setup", "running setup", "ran setup"
         if "ci_local.sh" in cmd:
-            arg = cmd.split("ci_local.sh", 1)[1].strip().split("\n")[0][:50]
-            return "gate", "gate", "gate" + (" " + arg if arg else " (full)")
+            arg = re.split(r"\s+(?:\d?>|\||&&|;)", cmd.split("ci_local.sh", 1)[1].strip().split("\n")[0])[0].strip()[:60]
+            on = f" on {arg}" if arg and not arg.startswith(("-", "2>", ">")) else ""
+            return "gate", "gate", "running the gate" + on, "ran the gate" + on
         if re.search(r"git\s+commit", cmd):
             m = re.search(r"-m\s+[\"']?(?:\$\(cat <<'?EOF'?\s*)?([^\"'\n]{3,60})", cmd)
-            return "commit", "commit", "commit" + (f' "{m.group(1).strip()}"' if m else "")
+            msg = f' "{m.group(1).strip()}"' if m else ""
+            return "commit", "commit", "committing" + msg, "committed" + msg
         if re.search(r"git\s+worktree\s+add", cmd):
-            return "setup", "setup", "create worktree"
+            return "setup", "setup", "creating the worktree", "created the worktree"
         if TEST_RE.search(cmd):
             m = re.search(r"(test/\S+|tests/\S+)", cmd)
-            return "test", "test", "test " + (m.group(1).rstrip("'\"") if m else "")
+            f = m.group(1).rstrip("'\"") if m else ""
+            return "test", "test", ("running tests " + f).strip(), ("ran tests " + f).strip()
         if re.search(r"(dart format|flutter analyze|dart analyze|php -l|vendor/bin/(pint|phpstan))", cmd):
-            return None, "test", "check: " + first[:60]
-        m = re.match(r"(?:cd\s+\S+\s*&&\s*)?git\s+(\S+)", first)
-        if m:
-            return None, "git", "git " + m.group(1)
+            return None, "test", "checking the code", "checked the code"
+        if re.search(r"(flutter|dart) pub (get|upgrade)|composer install|npm (ci|install)", cmd):
+            return None, "setup", "fetching packages", "fetched packages"
+        if only_looks(cmd):
+            return None, "look", "checking repo state", "checked repo state"
+        if re.match(r"git\s+add\b", first):
+            return None, "git", "staging changes", "staged changes"
+        if re.match(r"git\s+(checkout|restore)\s+--", first):
+            tgt = first.split("--", 1)[1].strip()
+            return None, "git", "reverting " + tgt, "reverted " + tgt
+        if re.match(r"git\s+branch\s+-m", first):
+            return None, "git", "renaming the branch", "renamed the branch"
         if CODE_RE.search(cmd):
-            return "code", "code", "edit via shell"
-        return None, "run", "run " + first[:70]
-    return None, "run", name.lower()
-
-
-KIND_STYLE = {"read": "2", "noise": "2", "code": "1", "run": "0", "git": "0", "setup": TEAL, "test": TEAL,
-              "gate": TEAL, "commit": GREEN, "report": VIOLET}
-PHASES = ["setup", "code", "test", "gate", "commit", "report"]
+            return "code", "code", "editing files with a shell command", "edited files with a shell command"
+        w = " ".join(first.split()[:4])
+        if not re.match(r"[\w./-]+( |$)", w):
+            return None, "run", "running a shell command", "ran a shell command"
+        return None, "run", "running " + w, "ran " + w
+    nice = {"Monitor": ("waiting on a background command", "waited on a background command"),
+            "TaskStop": ("stopping a task", "stopped a task"),
+            "EnterWorktree": ("entering a worktree", "entered a worktree"),
+            "ExitWorktree": ("leaving the worktree", "left the worktree")}
+    if name in nice:
+        return None, "run", *nice[name]
+    n = name.lower()
+    return None, "run", "running " + n, "ran " + n
 
 
 def load_session(name):
@@ -527,14 +632,21 @@ def load_session(name):
     return rows[-1] if rows else None
 
 
+def iso_to_epoch(ts):
+    try:
+        return calendar.timegm(time.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S"))
+    except Exception:
+        return None
+
+
 def parse(path):
-    """-> events (list of dict), cwd, model, last_ts, pending (event without result), last_text"""
+    """-> events (list of dict), cwd, model, last_ts, last_text"""
     calls, events, cwd, model, last_ts, last_text = {}, [], None, "", None, ""
     try:
         with open(path, errors="replace") as f:
             lines = f.readlines()[-2500:]
     except Exception:
-        return [], None, "", None, None, ""
+        return [], None, "", None, ""
     for line in lines:
         try:
             r = json.loads(line)
@@ -542,6 +654,7 @@ def parse(path):
             continue
         if r.get("cwd"):
             cwd = r["cwd"]
+        ts = iso_to_epoch(r["timestamp"]) if r.get("timestamp") else None
         if r.get("timestamp"):
             last_ts = r["timestamp"]
         msg = r.get("message") or {}
@@ -551,9 +664,10 @@ def parse(path):
             for b in content if isinstance(content, list) else []:
                 if b.get("type") == "text" and b.get("text", "").strip():
                     last_text = b["text"].strip()
-                    events.append({"kind": "say", "text": last_text})
+                    events.append({"kind": "say", "text": last_text, "ts": ts})
                 elif b.get("type") == "tool_use":
-                    ev = {"kind": "call", "id": b.get("id"), "name": b.get("name"), "input": b.get("input"), "result": None}
+                    ev = {"kind": "call", "id": b.get("id"), "name": b.get("name"), "input": b.get("input"),
+                          "result": None, "ts": ts}
                     calls[b.get("id")] = ev
                     events.append(ev)
         elif r.get("type") == "user" and isinstance(content, list):
@@ -563,25 +677,78 @@ def parse(path):
     return events, cwd, model, last_ts, last_text
 
 
-def iso_to_epoch(ts):
-    try:
-        return time.mktime(time.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S")) - time.timezone
-    except Exception:
-        return None
+def find_worktree(events, cwd):
+    """The session starts in the main checkout; the worker then creates or enters its own worktree.
+    Follow `git worktree add <path>` and `cd <path>` in its shell commands to find where it really works."""
+    cur = cwd or "."
+    found = None
+    for ev in events:
+        if ev["kind"] != "call" or ev["name"] != "Bash":
+            continue
+        cmd = str((ev["input"] or {}).get("command", ""))
+        for seg in segments(cmd):
+            w = seg.split()
+            if len(w) >= 2 and w[0] == "cd":
+                p = os.path.expanduser(w[1].strip("'\""))
+                p = p if os.path.isabs(p) else os.path.join(found or cur, p)
+                if os.path.isdir(p):
+                    found = os.path.realpath(p)
+            m = re.match(r"git(?:\s+-C\s+\S+)?\s+worktree\s+add\s+(.*)", seg)
+            if m:
+                args = [a.strip("'\"") for a in m.group(1).split() if not a.startswith("-")]
+                # `-b <branch>` takes a value; the path is the first non-flag word that is not that value
+                flagged = re.findall(r"-[bB]\s+(\S+)", m.group(1))
+                paths = [a for a in args if a not in flagged]
+                if paths:
+                    p = os.path.expanduser(paths[0])
+                    p = p if os.path.isabs(p) else os.path.join(found or cur, p)
+                    if os.path.isdir(p):
+                        found = os.path.realpath(p)
+    return found or cur
 
 
 def fmt_dur(sec):
     sec = max(0, int(sec))
-    return f"{sec // 3600}h{sec % 3600 // 60:02d}m" if sec >= 3600 else (f"{sec // 60}m{sec % 60:02d}s" if sec >= 60 else f"{sec}s")
+    if sec >= 3600:
+        return f"{sec // 3600}h {sec % 3600 // 60:02d}m"
+    if sec >= 60:
+        return f"{sec // 60}m {sec % 60:02d}s"
+    return f"{sec}s"
 
 
-def git(wt, *args):
-    return run(["git", "-C", wt, *args]).strip()
+def fmt_mark(sec):
+    sec = max(0, int(sec))
+    return f"{sec // 60}:{sec % 60:02d}"
+
+
+PHASES = ["setup", "code", "test", "gate", "commit", "report"]
+
+
+def strip(hit, cur, state, bad):
+    out = []
+    for p in PHASES:
+        if p in bad:
+            out.append(c(RED, "✗ " + p))
+        elif p in hit and (p != cur or state == "done"):
+            out.append(c(GREEN, "✓ ") + dim(p))
+        elif p == cur and state != "done":
+            out.append(c(TEAL, "▶ ") + bold(p))
+        else:
+            out.append(dim("· " + p))
+    return "   ".join(out)
+
+
+def count_lines(path):
+    try:
+        with open(path, errors="replace") as f:
+            return sum(1 for _ in f)
+    except Exception:
+        return 0
 
 
 def draw(name):
     size = shutil.get_terminal_size((100, 30))
-    width, height = size.columns, size.lines
+    w, height = max(size.columns, 40), size.lines
     info = load_session(name)
     if not info:
         return [f"{name}: no such background session (yet)"]
@@ -589,116 +756,155 @@ def draw(name):
     sid = info.get("sessionId", "")
     found = glob.glob(os.path.expanduser(f"~/.claude/projects/*/{sid}.jsonl"))
     events, cwd, model, last_ts, last_text = parse(found[0]) if found else ([], None, "", None, "")
-    wt = cwd or info.get("cwd") or "."
+    wt = find_worktree(events, cwd or info.get("cwd") or ".")
+    started = (info.get("startedAt") or 0) / 1000 or next((e["ts"] for e in events if e.get("ts")), None)
 
-    # classify every call once
-    feed, phases_hit, cur_phase, gate_line, report_failed, pending = [], set(), None, None, False, None
+    # classify every event once
+    log, hit, cur, gate, gate_text, report, report_why, pending = [], set(), None, None, "", None, "", None
     for ev in events:
         if ev["kind"] == "say":
-            feed.append(("say", ev["text"].splitlines()[0][:200], False))
+            log.append({"ts": ev["ts"], "kind": "say", "did": ev["text"].splitlines()[0]})
             continue
-        phase, kind, text = classify(ev["name"], ev["input"], wt)
-        res = ev["result"]
+        phase, kind, doing, did = classify(ev["name"], ev["input"], wt)
+        res, text = ev["result"], result_text(ev["result"])
         failed = bool(res and res.get("is_error"))
-        if ev["name"] == "SendMessage" and res is not None:
-            if failed or re.search(r'"success"\s*:\s*false|not reachable|tool_use_error', result_text(res)):
-                failed = True
-                report_failed = True
-                text = "report NOT delivered"
-        if res is None:
-            pending = (phase, kind, text)
+        if kind == "noise":
+            continue
+        if ev["name"] == "SendMessage" and "ngisa" in str((ev["input"] or {}).get("to", "")) and res is not None:
+            if failed or re.search(r'"success"\s*:\s*false|not reachable|tool_use_error', text):
+                failed, report, did = True, "failed", "report NOT delivered"
+                report_why = plain_error(text)
+            else:
+                report = "ok"
+        if phase == "test" and res is not None:
+            tail = text[-400:]
+            did += ", failed" if FAIL_RE.search(tail) and not PASS_RE.search(tail) else (", passed" if PASS_RE.search(tail) else "")
+        if phase == "gate":
+            if res is None:
+                gate, gate_text = "running", ""
+            else:
+                body = [l.strip() for l in text.splitlines() if l.strip()]
+                gate_text = body[-1] if body else ""
+                tail = " ".join(body[-6:])
+                gate = "failed" if FAIL_RE.search(tail) and not (PASS_RE.search(gate_text) and not FAIL_RE.search(gate_text)) \
+                    else ("passed" if PASS_RE.search(tail) else "ran")
         if phase:
-            phases_hit.add(phase)
-            cur_phase = phase
-        if phase == "gate" and res is not None:
-            body = [l.strip() for l in result_text(res).splitlines() if l.strip()]
-            gate_line = body[-1][:100] if body else None
-        feed.append((kind, text, failed, res is None))
+            hit.add(phase)
+            cur = phase
+        entry = {"ts": ev["ts"], "kind": kind, "doing": doing, "did": did, "failed": failed, "pending": res is None}
+        log.append(entry)
+        if res is None:
+            pending = entry
 
-    main = git(wt, "worktree", "list", "--porcelain").splitlines()
-    main = main[0][9:] if main and main[0].startswith("worktree ") else wt
-    base = git(main, "branch", "--show-current") or "main"
+    # git facts from the worker's own worktree
+    main_wt = git(wt, "worktree", "list", "--porcelain").splitlines()
+    main_wt = main_wt[0][9:] if main_wt and main_wt[0].startswith("worktree ") else wt
+    base = git(main_wt, "branch", "--show-current") or "main"
     branch = git(wt, "branch", "--show-current") or "?"
-    changed, commit = set(), ""
-    if os.path.realpath(wt) != os.path.realpath(main):
-        changed |= set(git(wt, "diff", "--name-only", f"{base}...HEAD").splitlines())
-        changed |= {l[3:] for l in git(wt, "status", "--porcelain").splitlines() if l[3:] and not l[3:].startswith("tool/")}
+    in_own = os.path.realpath(wt) != os.path.realpath(main_wt)
+    changed, add, rem, commit, subject = set(), 0, 0, "", ""
+    if in_own:
+        mb = git(wt, "merge-base", base, "HEAD") or base
+        for l in git(wt, "diff", "--numstat", mb).splitlines():
+            a, r, f = (l.split("\t") + ["", "", ""])[:3]
+            if f.startswith("tool/"):
+                continue
+            changed.add(f)
+            add += int(a) if a.isdigit() else 0
+            rem += int(r) if r.isdigit() else 0
+        for l in git(wt, "status", "--porcelain", "-uall").splitlines():
+            f = l[3:].strip()
+            if l.startswith("??") and f and not f.startswith("tool/") and f not in changed:
+                changed.add(f)
+                add += count_lines(os.path.join(wt, f))
         if git(wt, "rev-list", "--count", f"{base}..HEAD") not in ("", "0"):
-            commit = git(wt, "log", "-1", "--format=%h")
-
+            commit, subject = git(wt, "log", "-1", "--format=%h"), git(wt, "log", "-1", "--format=%s")
     if changed:
-        phases_hit.add("code")
-    started = (info.get("startedAt") or 0) / 1000
+        hit.add("code")
+    if commit:
+        hit.add("commit")
+
     end = iso_to_epoch(last_ts) if state == "done" and last_ts else time.time()
     elapsed = fmt_dur((end or time.time()) - started) if started else "?"
+    chip = {"working": c(TEAL, "working"), "running": c(TEAL, "working"), "busy": c(TEAL, "working"),
+            "blocked": c(AMBER, "needs you"), "done": c(GREEN, "done"), "idle": dim("idle")}.get(state, dim(state))
+    short_model = model.replace("claude-", "") or "?"
 
-    chip = {"working": c(TEAL, "working"), "running": c(TEAL, "working"), "blocked": c(AMBER, "blocked"),
-            "done": c(GREEN, "done"), "idle": dim("idle")}.get(state, dim(state))
-    lines = [f"{c('1', name)}  {chip}  {dim(model.replace('claude-', ''))}",
-             f"{dim('branch')} {c(VIOLET, branch)}  {dim('worktree')} {wt.replace(os.path.expanduser('~'), '~', 1)}"]
+    right = chip + dim(f" · {short_model} · {elapsed}")
+    lines = [split(bold(clip(name, w - vis(right) - 2)), right, w)]
+    shown = os.path.relpath(wt, main_wt) if in_own and wt.startswith(main_wt.rstrip("/") + "/") else wt.replace(os.path.expanduser("~"), "~", 1)
+    lines.append(dim(clip(f"{branch} · {shown}" if in_own else f"{branch if branch != '?' else 'no branch'} · in the main checkout", w)))
+    lines.append("")
 
-    # phase strip
-    parts = []
-    for p in PHASES:
-        if p == "report" and report_failed:
-            parts.append(c(RED, "✗ report"))
-        elif p in phases_hit and (p != cur_phase or state == "done"):
-            parts.append(c(GREEN, "✓ ") + p)
-        elif p == cur_phase and state != "done":
-            parts.append(c(TEAL, "▶ " + p))
-        else:
-            parts.append(dim("· " + p))
-    lines.append("  ".join(parts))
-
-    ctr = [elapsed, f"{len(changed)} file{'s' if len(changed) != 1 else ''}"]
-    if commit:
-        ctr.append("commit " + c(GREEN, commit))
-    lines.append(dim("  ·  ").join(ctr))
-    if gate_line:
-        bad = re.search(r"fail|error|exit [1-9]|not clean|FAILED", gate_line, re.I)
-        lines.append(dim("gate ") + c(RED if bad else (GREEN if re.search(r"\bok\b|exit 0|passed", gate_line, re.I) else "2"), gate_line))
-
+    # state line: what needs the human, or how it ended
+    bad = set()
+    if gate == "failed":
+        bad.add("gate")
+    if report == "failed":
+        bad.add("report")
     if state == "blocked":
         if pending:
-            lines.append(c(AMBER, "waiting on: " + pending[2]) + dim(f"   claude attach {name}"))
-        elif last_text and not report_failed:
-            label = "asks: " if last_text.rstrip().endswith("?") else "stopped: "
-            lines.append(c(AMBER, label + last_text.splitlines()[0][:120]) + dim(f"   claude attach {name}"))
-        elif report_failed:
-            lines.append(c(AMBER, "waiting for you") + dim(f"   claude attach {name}"))
+            lines.append(c(AMBER, "waiting  ") + clip(pending["doing"], w - 9))
+        elif last_text:
+            lines.append(c(AMBER, "asks  " if last_text.rstrip().endswith("?") else "stopped  ")
+                         + clip(last_text.splitlines()[0], w - 8))
         else:
-            lines.append(c(AMBER, f"needs you: claude attach {name}"))
-    if report_failed:
-        lines.append(c(RED, "report NOT delivered: the NGISA was not reachable, so it never saw this result"))
+            lines.append(c(AMBER, "waiting for you"))
+        lines.append(dim("answer with: ") + f"claude attach {name}")
+        lines.append("")
+    elif state == "done":
+        tail = c(GREEN, "report delivered") if report == "ok" else (c(RED, "report NOT delivered") if report == "failed"
+                                                                     else dim("no report sent"))
+        what = (f'{commit} "{subject}"' if commit else "no commit")
+        lines.append(c(GREEN, "done  ") + clip(what, w - 6 - 22) + dim(" · ") + tail)
+        lines.append("")
+    if gate == "failed" and state != "done":
+        lines.append(c(RED, "gate failed  ") + clip(gate_text, w - 13))
+    if report == "failed":
+        lines.append(c(RED, "report NOT delivered  ") + dim(clip(report_why or "the NGISA was not reachable", w - 22)))
+    if (gate == "failed" and state != "done") or report == "failed":
+        lines.append("")
 
-    lines.append(dim("─" * width))
-    room = max(3, height - len(lines) - 1)
-    body, prev, count = [], None, 0
-    collapsed = []
-    for item in feed:
-        key = (item[0], item[1])
-        if collapsed and collapsed[-1][0] == key:
-            collapsed[-1][1] += 1
+    lines.append(strip(hit, cur, state, bad))
+    ctr = [f"{len(changed)} file{'s' if len(changed) != 1 else ''}"]
+    if changed:
+        ctr.append(f"+{add} −{rem}")
+    ctr.append({"running": "gate running", "failed": "gate failed", "passed": "gate passed", "ran": "gate ran"}.get(gate, "gate not run"))
+    lines.append(dim(" · ".join(ctr)))
+    lines.append("")
+
+    if state in ("working", "running", "busy"):
+        if pending:
+            lines.append(dim("now  ") + clip(pending["doing"], w - 5))
         else:
-            collapsed.append([key, 1, item])
-    feed2 = [(it[0], it[1] + (f" ×{n}" if n > 1 else ""), *it[2:]) for _, n, it in collapsed]
-    for item in feed2[-room * 2:]:
-        kind, text, failed = item[0], item[1], item[2]
-        waiting = len(item) > 3 and item[3]
-        text = text.replace(os.path.expanduser("~"), "~")
-        if kind == "say":
-            body.append("  " + c(VIOLET, "» ") + text)
+            lines.append(dim("now  ") + "thinking")
+        lines.append("")
+
+    # history: newest first, plumbing folded, repeats counted
+    rows = []
+    for e in reversed([x for x in log if not x.get("pending")]):
+        text = e["did"] if e["kind"] != "say" else "» " + e["did"]
+        if rows and rows[-1]["text"] == text and e["kind"] in ("look", "read", "run"):
+            rows[-1]["n"] += 1
+            rows[-1]["ts"] = e["ts"]
             continue
-        style = RED if failed else KIND_STYLE.get(kind, "0")
-        body.append("  " + c(style, "● " if not waiting else "◌ ") + c(style, text) + (dim(" …") if waiting else ""))
-    lines += body[-room:]
-    return [fit(l, width) for l in lines]
+        rows.append({"ts": e["ts"], "text": text, "n": 1, "failed": e.get("failed"), "kind": e["kind"]})
+    room = max(2, height - len(lines) - 1)
+    for r in rows[:room]:
+        mark = fmt_mark(r["ts"] - started) if r["ts"] and started else ""
+        text = r["text"].replace(os.path.expanduser("~"), "~") + (f" ×{r['n']}" if r["n"] > 1 and r["kind"] != "look" else "")
+        row = dim(f"{mark:>5}  ") + (c(RED, clip(text, w - 7)) if r["failed"] else dim(clip(text, w - 7)))
+        lines.append(row)
+    while lines and lines[-1] == "":
+        lines.pop()
+    return [fit(l, w) for l in lines]
 
 
 def main():
     name = sys.argv[1] if len(sys.argv) > 1 else sys.exit("usage: agent-view <session-name>")
     interval = float(os.environ.get("AGENT_VIEW_INTERVAL", "2"))
     once = os.environ.get("AGENT_VIEW_ONCE") == "1"
+
     def paint():
         lines = draw(name)
         sys.stdout.write("\033[H" + "".join(l + "\033[K\n" for l in lines) + "\033[J")
@@ -909,7 +1115,7 @@ In the NGISA tab, type something tiny with 2 independent parts, e.g.:
 > Add a `toString()` to `OcrResult` and a unit test for `BoundsSerializer` edge cases. Brainstorm, then plan, then wait for me.
 
 Approve the spec, approve the plan, then say `go`. The NGISA answers in caveman ultra (the hook in `settings.local.json`). You should see:
-- 2 panes open on the right of the NGISA, one per agent. They are read-only views (`agent-view`): a header with state, model, branch and worktree, a phase strip (setup, code, test, gate, commit, report), counters (elapsed time, files changed, commit, last gate line), a plain-language activity feed, and no input box. The NGISA's status line adds a `workers` roster (`ngisa-statusline`). To answer a worker that shows `needs you`, run `claude attach <name>` in a spare pane. `AGENT_VIEW=attach` makes `agent-wall.sh` open the full `claude attach` pane instead.
+- 2 panes open on the right of the NGISA, one per agent. They are read-only views (`agent-view`): a two-line header (name, state, model, elapsed; branch and worktree), a blocked or done line when it matters (`waiting`, `gate failed`, `report NOT delivered`, `done <hash> ... report delivered`), a phase strip (`✓` done, `▶` now, `·` later, `✗` failed), one counters line (files, `+added −removed`, gate state), a `now` line, and a short plain-language log with times, newest first. No input box. The NGISA's status line adds a `workers` roster (`ngisa-statusline`). To answer a worker that shows `needs you`, run `claude attach <name>` in a spare pane. `AGENT_VIEW=attach` makes `agent-wall.sh` open the full `claude attach` pane instead.
 - each agent finishes with tests green, then the NGISA says it got a report
 - the NGISA runs the reviewer and shows you one table
 
@@ -936,7 +1142,7 @@ To open a draft PR from the lab instead, tell the NGISA "open a PR" once the fea
 | agent stuck on "Needs you" | it hit a command not in the allow list; `claude attach <name>` in a spare pane, approve it, then add it to `settings.local.json` in the kit |
 | `agent-pr: no 'upstream' remote` | the lab was made before this script existed: `git remote add upstream <real-url>` in the lab |
 | NGISA not in caveman | `which caveman-ultra-hook` must print a path; `ls ~/lab/<repo>/.claude/settings.local.json` must have a `hooks` block. The rule also rides in the NGISA's system prompt (`repo-tab` passes `--append-system-prompt`), so restart the NGISA after changing it. Hook and prompt together only make drift rarer; log any drift in the run log |
-| worker pane shows a wrong phase tick | the phase strip and gate line are guesses from the transcript (shell commands are classified by pattern); the activity feed under it is the ground truth. `AGENT_VIEW=attach` for the full pane |
+| worker pane shows a wrong phase tick | the phase strip and gate line are guesses from the transcript (shell commands are classified by pattern); the log under it is the ground truth. `AGENT_VIEW=attach` for the full pane |
 | no `workers` line in the NGISA status line | `which ngisa-statusline` must print a path, and the NGISA must be started with the new `repo-tab`. Only workers started after the NGISA appear; the in-process reviewer never does |
 | worker pane blank or garbled | `agent-view` reads the session transcript under `~/.claude/projects/`, an internal format. Use `AGENT_VIEW=attach` until it is fixed |
 | tweakcc customisations gone | Claude Code auto-updated and the new binary is unpatched. Re-run your tweakcc apply script, restart the NGISA, then `claude daemon stop` between tasks so new workers start from the patched binary. `DISABLE_AUTOUPDATER=1` in your shell profile stops the surprise |

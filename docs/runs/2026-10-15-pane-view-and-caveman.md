@@ -44,3 +44,16 @@ From a busy-bees screenshot: worker panes showed an input box, the NGISA answere
 ### Not tested
 - A real WezTerm run: panes and the roster over a whole task, and whether report delivery works with the NGISA already open.
 - The old bash `agent-view` is kept at `~/bin/agent-view.bash-backup` until the merge.
+
+## Follow-up: cleaner worker pane (2026-10-15)
+- First real run of the pane on a busy-bees test task (`resolveTeacherLink` unit tests). Seen: the feed leaked a raw shell one-liner cut mid-word (`run pwd; git branch --show-current; ls tool 2>&1 | head; git status --shor`), the header showed `branch main` and the main checkout while the worker was meant to be in its own worktree, bullets were inconsistent, and nothing said what was happening now. The NGISA roster and caveman replies worked, tweakcc patches were applied.
+- Design (approved in chat, previewed with a throwaway mock script before any change): two-line header (name, state chip, model, elapsed; branch and worktree dim), `waiting` / `gate failed` / `report NOT delivered` / `done <hash> "<subject>" - report delivered` line only when it matters, phase strip with a symbol per state (`✓ ▶ · ✗`, never colour alone), one counters line (`files · +added −removed · gate state`), a `now` line, then a dim log with mm:ss marks, newest first.
+- `agent-view` rewritten to match: shell plumbing (`pwd`, `ls`, `git status`, ...) folds into `checked repo state`; the log says `ran tests <file>, passed|failed`, `ran the gate on <file>`, `staged changes`, `reverted lib/`; tool noise (`ToolSearch`, `ListAgents`) is hidden; words are cut at a word boundary with `…`; JSON in a failed report is reduced to its message.
+- Bug fixed: the worktree was the session's start directory (the main checkout). It now follows `git worktree add <path>` and `cd <path>` in the worker's shell commands, and reports untracked files (the new test file) in the `+added` count. `PRODUCT.md` added at the repo root (impeccable init: users, constraints, principles; platform `terminal`).
+
+### Checked
+- Replay on four real transcripts (working, blocked, `inputtest` with an undelivered report, finished) at widths 40, 60, 80 and 140: no line is wider than the terminal, no raw JSON, counters match git (`1 file · +114 −0` for the new test file).
+- Quickstart script block equals `~/bin/agent-view`.
+
+### Not tested
+- Colours and symbols in a real WezTerm pane over a whole task, and whether the report reaches the NGISA with the NGISA open first.
