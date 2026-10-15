@@ -101,7 +101,7 @@ The task text gives the paths you may touch, the stack and the test command. Any
 2. TDD: write the failing test, show it red, make it green. Use the task's test command, else the one in CLAUDE.md or `tool/ci_local.sh`.
 3. `./tool/ci_local.sh` must exit 0 before you stop. Never edit `tool/ci_local.sh`, `tool/setup.sh` or `tool/known_failures.txt`, and never run `--record-baseline`. `./tool/ci_local.sh <test paths>` runs just those tests for quick checks; the full gate must still exit 0 before you stop. A test listed in `tool/known_failures.txt` was already failing before you; leave it. Never skip, delete or loosen tests, lint rules or analyzer config to get green. If setup or the gate cannot run, or fails for a reason outside your task, stop and report the exact error. A red gate in the report is fine; a faked green is not.
 4. Commit on your branch. Never push, never merge, never touch main.
-5. Final message, exactly: branch name, files changed, test command + result, anything you could NOT verify and why.
+5. Final message, exactly: branch name, files changed, test command + result, anything you could NOT verify and why. Write it in caveman ultra (no articles or filler, fragments OK); branch, paths, commands and errors stay exact.
 Do not edit files outside the task's listed paths. If you must, stop and say so.
 ```
 
@@ -121,7 +121,7 @@ Gate integrity: run `diff` on `tool/ci_local.sh`, `tool/setup.sh` and (if it exi
 main checkout (`$(git rev-parse --path-format=absolute --git-common-dir)/..`). In a lab these files are untracked,
 so the git diff will not show them. Any difference is a BLOCK unless the task asked for it. Also BLOCK on weakened
 checks: a new line in `tool/known_failures.txt`, tests removed or skipped, assertions relaxed, lint or analyzer config loosened, new ignore/suppress comments.
-Output: APPROVE or BLOCK, then a numbered list of findings with file:line.
+Output: APPROVE or BLOCK, then a numbered list of findings with file:line. Write it in caveman ultra (no articles or filler, fragments OK); paths, commands and quoted errors stay exact.
 Do not edit files.
 ```
 
@@ -154,8 +154,11 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
 Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
   Spawn ONE implementer with exactly those paths, then run the reviewer as usual. Anything bigger: say it needs a plan.
 Relay: when I ask for something extra from a worker (e.g. "have it carve", "fix the lint"), SendMessage it to
-  that worker (same session, same branch). For carve: tell it to run /carve; I answer its prompts in its pane.
-Style: talk in caveman ultra (a hook reminds you). Code, commits, PR text, security warnings: normal.
+  that worker (same session, same branch). For carve: tell it to run /carve; I answer its prompts with `claude attach <name>` (worker panes are read-only).
+Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, questions, report tables): drop articles, filler,
+  pleasantries, hedging; fragments OK; abbreviate (DB, auth, config, req, res, fn); arrows for causality. Paths, branches, commands,
+  session ids, quoted errors: exact. Code, commits, PR text, security warnings: normal.
+  Not: "I have started the implementer worker. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Reviewer next."
 Never: merge to main, force-push, publish, touch store/remote-config/signing, delete branches with unmerged work.
 ```
 
@@ -264,9 +267,9 @@ claude --bg --name "$name" --agent "$agent" --model "$model" \
   "$prompt  When finished, send your final report to @ngisa-$repo with SendMessage."
 
 if (( ${#others[@]} == 0 )); then
-  wezterm cli split-pane --pane-id "$me" --right --percent 55 -- claude attach "$name"
+  wezterm cli split-pane --pane-id "$me" --right --percent 55 -- agent-view "$name"
 else
-  wezterm cli split-pane --pane-id "${others[-1]}" --bottom -- claude attach "$name"
+  wezterm cli split-pane --pane-id "${others[-1]}" --bottom -- agent-view "$name"
 fi
 ```
 
@@ -275,7 +278,7 @@ Notes:
   each agent reports to its own repo's NGISA (`@ngisa-scanner`).
 - Each agent is a background session started from the repo, so its worktree is in that repo's
   `.claude/worktrees/`. Repos never share worktrees.
-- Panes are viewers (`claude attach`). Closing one never stops the agent; `wezterm cli kill-pane` when done.
+- Panes are read-only views (`agent-view`: a header with state, model, worktree and branch, then the worker's transcript; no input box). To answer a worker that shows `needs you`, `claude attach <name>` in a spare pane. Closing a pane never stops the agent; `wezterm cli kill-pane` when done.
 - The "tab full" check counts panes, not running agents. If you closed a pane early, the agent still
   runs and still counts against your quota; check `claude agents`.
 - Check `wezterm cli list --format json` on your version prints `tab_id`; it should.
@@ -291,7 +294,7 @@ Notes:
 
 Allow exactly `"Bash(agent-wall.sh:*)"` in `~/.claude/settings.json`. Don't allow `Bash(wezterm cli:*)`.
 
-Caveman ultra for the NGISA and the workers' reports comes from a `SessionStart` + `UserPromptSubmit` hook that runs `caveman-ultra-hook` (it adds context; nothing is blocked). Code, commits and PR text stay normal. The lab version of these rules, which routes PRs through `agent-pr`, is in `lab-quickstart.md`.
+Caveman ultra for the NGISA and the workers' reports comes from a `SessionStart` + `UserPromptSubmit` hook that runs `caveman-ultra-hook` (it adds context; nothing is blocked), plus the same rule in the NGISA's system prompt (`repo-tab` passes `--append-system-prompt`), because a one-line reminder alone was not enough for Opus. Code, commits and PR text stay normal. The lab version of these rules, which routes PRs through `agent-pr`, is in `lab-quickstart.md`.
 
 Don't run NGISA sessions or agents in `bypassPermissions`: in that mode incoming reports from other sessions
 are held for approval instead of delivered.

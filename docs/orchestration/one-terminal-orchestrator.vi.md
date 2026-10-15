@@ -92,7 +92,7 @@ The task text gives the paths you may touch, the stack and the test command. Any
 2. TDD: write the failing test, show it red, make it green. Use the task's test command, else the one in CLAUDE.md or `tool/ci_local.sh`.
 3. `./tool/ci_local.sh` must exit 0 before you stop. Never edit `tool/ci_local.sh`, `tool/setup.sh` or `tool/known_failures.txt`, and never run `--record-baseline`. `./tool/ci_local.sh <test paths>` runs just those tests for quick checks; the full gate must still exit 0 before you stop. A test listed in `tool/known_failures.txt` was already failing before you; leave it. Never skip, delete or loosen tests, lint rules or analyzer config to get green. If setup or the gate cannot run, or fails for a reason outside your task, stop and report the exact error. A red gate in the report is fine; a faked green is not.
 4. Commit on your branch. Never push, never merge, never touch main.
-5. Final message, exactly: branch name, files changed, test command + result, anything you could NOT verify and why.
+5. Final message, exactly: branch name, files changed, test command + result, anything you could NOT verify and why. Write it in caveman ultra (no articles or filler, fragments OK); branch, paths, commands and errors stay exact.
 Do not edit files outside the task's listed paths. If you must, stop and say so.
 ```
 
@@ -112,7 +112,7 @@ Gate integrity: run `diff` on `tool/ci_local.sh`, `tool/setup.sh` and (if it exi
 main checkout (`$(git rev-parse --path-format=absolute --git-common-dir)/..`). In a lab these files are untracked,
 so the git diff will not show them. Any difference is a BLOCK unless the task asked for it. Also BLOCK on weakened
 checks: a new line in `tool/known_failures.txt`, tests removed or skipped, assertions relaxed, lint or analyzer config loosened, new ignore/suppress comments.
-Output: APPROVE or BLOCK, then a numbered list of findings with file:line.
+Output: APPROVE or BLOCK, then a numbered list of findings with file:line. Write it in caveman ultra (no articles or filler, fragments OK); paths, commands and quoted errors stay exact.
 Do not edit files.
 ```
 
@@ -141,8 +141,11 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
 Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
   Spawn ONE implementer with exactly those paths, then run the reviewer as usual. Anything bigger: say it needs a plan.
 Relay: when I ask for something extra from a worker (e.g. "have it carve", "fix the lint"), SendMessage it to
-  that worker (same session, same branch). For carve: tell it to run /carve; I answer its prompts in its pane.
-Style: talk in caveman ultra (a hook reminds you). Code, commits, PR text, security warnings: normal.
+  that worker (same session, same branch). For carve: tell it to run /carve; I answer its prompts with `claude attach <name>` (worker panes are read-only).
+Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, questions, report tables): drop articles, filler,
+  pleasantries, hedging; fragments OK; abbreviate (DB, auth, config, req, res, fn); arrows for causality. Paths, branches, commands,
+  session ids, quoted errors: exact. Code, commits, PR text, security warnings: normal.
+  Not: "I have started the implementer worker. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Reviewer next."
 Never: merge to main, force-push, publish, touch store/remote-config/signing, delete branches with unmerged work.
 ```
 
@@ -154,7 +157,7 @@ Trong `~/.claude/settings.json`, thêm vào hook format + Stop gate của playbo
 - **`Notification`** (`agent_needs_input`, `agent_completed`) → thông báo desktop/điện thoại, khỏi ngồi canh màn hình.
 - Cho phép sẵn các lệnh nhàm chán (`fvm flutter test`, `melos *`, `dart format`, `git add/commit/diff/log`, `agent-wall.sh`) trong `permissions.allow`. Không thì agent nền nào cũng đứng ở "Needs input" và song song chỉ là giả.
 - **Không** cho phép rộng `Bash(wezterm cli:*)`. Chỉ đi qua `agent-wall.sh` để layout không bị loạn.
-- NGISA và báo cáo của worker nói kiểu caveman ultra nhờ hook `SessionStart` + `UserPromptSubmit` chạy `caveman-ultra-hook` (chỉ thêm context, không chặn gì). Code, commit, PR vẫn viết bình thường. Bản luật cho lab, đi PR qua `agent-pr`, nằm trong `lab-quickstart.md`.
+- NGISA và báo cáo của worker nói kiểu caveman ultra nhờ hook `SessionStart` + `UserPromptSubmit` chạy `caveman-ultra-hook` (chỉ thêm context, không chặn gì), cộng với cùng luật đó trong system prompt của NGISA (`repo-tab` truyền `--append-system-prompt`), vì một dòng nhắc thôi không đủ với Opus. Code, commit, PR vẫn viết bình thường. Bản luật cho lab, đi PR qua `agent-pr`, nằm trong `lab-quickstart.md`.
 - **Không** chạy NGISA hay agent ở `bypassPermissions`: ở chế độ đó, báo cáo từ session khác bị giữ lại chờ duyệt, không tự đến NGISA.
 
 ## 3. WezTerm: một cửa sổ, mỗi tab một repo
@@ -171,7 +174,7 @@ Trong `~/.claude/settings.json`, thêm vào hook format + Stop gate của playbo
 
 - Không có tab `overview` riêng. Cần xem hết thì chạy `claude agents` ở một tab trống: mọi agent của mọi repo. `Ctrl+S` gom theo repo. `Space` xem nhanh, `Enter` vào hẳn, `←` thoát ra. Dòng vàng = đang chờ bạn.
 - Mỗi tab repo: NGISA bên trái, tối đa 3 pane agent bên phải.
-- Pane chỉ để **xem** (`claude attach`). Đóng pane **không** dừng agent.
+- Pane chỉ để **xem**, không có ô nhập (`agent-view`: dòng đầu có trạng thái, model, worktree và branch, bên dưới là transcript của worker). Muốn trả lời worker đang `needs you` thì chạy `claude attach <name>` ở một pane trống. Đóng pane **không** dừng agent.
 
 ### Vì sao mỗi repo một NGISA, không phải một NGISA chung
 
@@ -216,9 +219,9 @@ claude --bg --name "$name" --agent "$agent" --model "$model" \
   "$prompt  When finished, send your final report to @ngisa-$repo with SendMessage."
 
 if (( ${#others[@]} == 0 )); then
-  wezterm cli split-pane --pane-id "$me" --right --percent 55 -- claude attach "$name"
+  wezterm cli split-pane --pane-id "$me" --right --percent 55 -- agent-view "$name"
 else
-  wezterm cli split-pane --pane-id "${others[-1]}" --bottom -- claude attach "$name"
+  wezterm cli split-pane --pane-id "${others[-1]}" --bottom -- agent-view "$name"
 fi
 ```
 

@@ -11,5 +11,5 @@ Gate integrity: run `diff` on `tool/ci_local.sh`, `tool/setup.sh` and (if it exi
 main checkout (`$(git rev-parse --path-format=absolute --git-common-dir)/..`). In a lab these files are untracked,
 so the git diff will not show them. Any difference is a BLOCK unless the task asked for it. Also BLOCK on weakened
 checks: a new line in `tool/known_failures.txt`, tests removed or skipped, assertions relaxed, lint or analyzer config loosened, new ignore/suppress comments.
-Output: APPROVE or BLOCK, then a numbered list of findings with file:line.
+Output: APPROVE or BLOCK, then a numbered list of findings with file:line. Write it in caveman ultra (no articles or filler, fragments OK); paths, commands and quoted errors stay exact.
 Do not edit files.
