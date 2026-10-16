@@ -30,6 +30,13 @@ You need macOS, [WezTerm](https://wezterm.org), `jq` and a recent Claude Code (`
 
 Done? `rm -rf ~/lab/<your-repo>`, or fetch a branch from it into the real repo.
 
+**On a real repo instead of a lab copy** (once per repo, nothing committed, every file git-excluded):
+```bash
+real-init ~/Projects/<your-repo>
+repo-tab  ~/Projects/<your-repo>
+```
+See step 5 of [`lab-quickstart.md`](docs/orchestration/lab-quickstart.md).
+
 ## Learn more
 
 - [Live diagram](https://khoa2001.github.io/ngisa/diagrams/ngisa-and-agent-wall.html) ([vi](https://khoa2001.github.io/ngisa/diagrams/ngisa-and-agent-wall.vi.html)): the window layout and the idea-to-merge flow on one page. Source: [`docs/diagrams/`](docs/diagrams/).
