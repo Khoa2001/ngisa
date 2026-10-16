@@ -69,16 +69,14 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    You may not edit code yourself (your settings deny the code dirs), even for a one-line fix. Every code change goes to a worker.
    A bug report is a task too: repro, root cause and fix all go to a worker (say "repro first" in the task text). You never run tests, write repro files or edit code with shell commands (`ngisa-guard` blocks them).
 4. When a worker's report arrives, read it and record the row. I read the diff myself, so do not add your own review.
-   Then record the row: `ngisa-report set <slug> --base <base branch> --branch <branch> --state ok|fail|blocked --gate '<gate line>' --tests '<n pass>' --diff <files> <added> <removed>`
-   plus `--finding '<text>'` per problem the worker's report names (ignore a worker's `ledger:` line: do not show it; give its path only when I ask), `--ask '<text>|<why>|<rec>'` per item in the worker's `asks:` (leave `<why>` empty when the worker gave none: never invent one; text max 60, why max 80, rec max 24 characters, `set` refuses longer: shorten, do not paste sentences; the board shows only the text, you build the question from all three), `--unverified '<text>'` per item in its `unverified:`.
-   `fail` when the worker's `gate:` line shows a red check, `blocked` when it waits on me, else `ok`; a worker still running is `--state working`.
-   Diff counts: `git diff --shortstat <base>...<branch>`. Always single-quote text values (worker text holds `$` and backticks); a `'` inside text becomes `'\''`.
+   Then record the row: `ngisa-report set <slug> --base <base branch> --branch <branch> --state ok|fail|blocked`.
+   `fail` when the worker's `gate:` line shows a red check, `blocked` when it waits on me, else `ok`; a worker still running is `--state working`. Only the glyph and the slug show on the board; the worker's findings and unverified items stay in its report and pane. Ignore a worker's `ledger:` line: do not show it; give its path only when I ask.
 5. Only one agent runs integration tests / the emulator at a time.
 6. Merge task branches that finished ok (or that I allowed) into a local feature branch. Never push on your own.
    Do the merge in its own worktree (`git worktree add .claude/worktrees/integration -b <feature branch>`). Never check out or merge in the main checkout: it may hold my uncommitted work.
-7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board of cards), then the PR link if any. Never retype or reword it.
-   When a worker's report holds an ask, put the board first (the card shows the `?` line), then ask me with the `AskUserQuestion` tool (see Ask). Never print the question again as text.
-Quiet: my screen is for decisions, not a log. While workers run, say ONE line per event (spawn: `<slug> spawned. Gate-check next.`).
+7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board), then the PR link if any. Never retype or reword it.
+   When a worker is `fail` or holds an ask: after the board add ONE line saying why (12 words at most), then ask me with the `AskUserQuestion` tool (see Ask). Never print the question again as text.
+Quiet: my screen is for decisions, not a log. While workers run, say ONE line per event (spawn: `<slug> spawned.`).
   No board until a worker reports, no session ids or `claude attach` hints (the worker pane shows its work), and never mention
   hook blocks, retries or workarounds: fix them silently. Only asks, the board after a report, and the PR link get more than one line.
 Ask: when you need a decision, use the `AskUserQuestion` tool, never prose or a pasted card, then wait. It draws at the right width in my terminal.
@@ -99,7 +97,7 @@ Pull request: only when I ask, from the local feature branch. Run
 Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, questions, report tables): drop articles, filler,
   pleasantries, hedging; fragments OK; abbreviate (DB, auth, config, req, res, fn); arrows for causality. Paths, branches, commands,
   session ids, quoted errors: exact. Code, commits, PR text, security warnings: normal.
-  Not: "I have started the implementer worker. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Gate-check next."
+  Not: "I have started the implementer worker. It is still running." Yes: "fix-x spawned."
   Long text too (findings, decisions): numbered fragments, never prose paragraphs.
   Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."
   Boards are templates: paste them, do not rewrite them.
@@ -300,7 +298,7 @@ kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/ngisa}
 # the repo's own deny list (agent-init writes it from the detected stack); else the kit's Flutter default
 cfg="$dir/.claude/ngisa-settings.json"; [[ -f $cfg ]] || cfg="$kit/ngisa-settings.json"
 # the caveman rule also goes in the system prompt, where Opus weighs it more than a hook reminder
-style='Caveman ultra applies to EVERY message you write to the user: status updates, spawn notices, summaries, questions, report tables. Drop articles (a/an/the), filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality. Paths, branch names, commands, session ids, quoted errors: exact. Code, commits, PR text, security warnings, irreversible-action confirmations: normal prose. Not: "I have started the implementer worker on this fix. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Gate-check next." Long text too (findings, decisions): numbered fragments, never prose paragraphs. Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes." Reports are templates: paste the output of ngisa-report set (the board) unchanged; do not reword it. Decisions go through the AskUserQuestion tool, never prose.'
+style='Caveman ultra applies to EVERY message you write to the user: status updates, spawn notices, summaries, questions, report tables. Drop articles (a/an/the), filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality. Paths, branch names, commands, session ids, quoted errors: exact. Code, commits, PR text, security warnings, irreversible-action confirmations: normal prose. Not: "I have started the implementer worker on this fix. It is still running." Yes: "fix-x spawned." Long text too (findings, decisions): numbered fragments, never prose paragraphs. Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes." Reports are templates: paste the output of ngisa-report set (the board) unchanged; do not reword it. Decisions go through the AskUserQuestion tool, never prose.'
 # status line + guard hook, merged into a temp copy of the settings (NGISA only).
 # ngisa-guard blocks shell edits of the code dirs and direct test runs; it reads the dirs from NGISA_CODE_DIRS.
 sl=""; [[ -n ${NGISA_ROSTER:-} ]] && sl=$(command -v ngisa-statusline || true);   # the worker roster line is opt-in (NGISA_ROSTER=1)
@@ -1162,7 +1160,7 @@ EOF
 
 cat > ~/bin/ngisa-report <<'EOF'
 #!/usr/bin/env python3
-"""Report board for the NGISA: one framed card per worker task (findings, asks, unverified count), as plain text for the chat.
+"""Report board for the NGISA: one line per worker task (state glyph and slug), as plain text for the chat.
 
   ngisa-report set <slug> --state ok|fail|working|blocked [--base B] [--branch X] [--gate G] [--tests T]
                   [--diff FILES ADD DEL] [--finding F]... [--ask "text|why|rec"]... [--unverified U]...
@@ -1173,7 +1171,7 @@ cat > ~/bin/ngisa-report <<'EOF'
 
 One report per repo: ~/.cache/ngisa/report/ngisa-<repo>.json (XDG_CACHE_HOME respected). Python 3 standard library only.
 """
-import argparse, json, os, subprocess, sys, tempfile, textwrap, time
+import argparse, json, os, subprocess, sys, tempfile, time
 
 STATES = {"ok": "✓", "fail": "✗", "working": "▶", "blocked": "?"}
 ASK_LIMITS = {"text": 60, "why": 80, "rec": 24}
@@ -1213,76 +1211,8 @@ def save(path, data):
     os.replace(tmp, path)
 
 
-def detail(t):
-    if t.get("state") == "fail":
-        return t.get("gate") or t.get("tests") or ""
-    return t.get("tests") or t.get("gate") or ""
-
-
-def diff_text(t):
-    d = t.get("diff")
-    return f"{d['files']} files +{d['add']} −{d['del']}" if d else ""
-
-
-def pane_width():
-    """Columns of the WezTerm pane this runs in (the NGISA pane), less 4 for the chat margin; 64 when unknown."""
-    try:
-        pane = int(os.environ["WEZTERM_PANE"])
-        rows = json.loads(subprocess.run(["wezterm", "cli", "list", "--format", "json"], capture_output=True, text=True, timeout=2).stdout)
-        cols = next(r["size"]["cols"] for r in rows if r["pane_id"] == pane)
-        return max(40, cols - 4)
-    except Exception:
-        return 64
-
-
-WIDTH = int(os.environ.get("NGISA_REPORT_WIDTH") or pane_width())
-LABEL = {"ok": "✓ ok", "fail": "✗ fail", "working": "▶ working", "blocked": "? needs you"}
-
-
-def fit(text, n):
-    text = str(text)
-    lead = text[: len(text) - len(text.lstrip())]
-    text = lead + " ".join(text.split())
-    return text if len(text) <= n else text[: n - 1] + "…"
-
-
-def wrap(text, prefix="", cont="  "):
-    """At most two lines of the card width, the second one cut with an ellipsis."""
-    n = WIDTH - 4
-    lines = textwrap.wrap(" ".join(str(text).split()), n - len(prefix), max_lines=2, placeholder="…") or [""]
-    return [prefix + lines[0]] + [cont + l for l in lines[1:]]
-
-
-def card(t, rows):
-    """One framed card: the slug on the left of the top edge, the state on the right. Every row is cut to one line."""
-    inner = WIDTH - 4
-    state = " " + LABEL.get(t.get("state"), "·") + " "
-    name = " " + fit(t["slug"], WIDTH - len(state) - 8) + " "
-    fill = WIDTH - 4 - len(name) - len(state)
-    top = "╔═" + name + "═" * max(fill, 1) + state + "═╗"
-    body = [f"║ {fit(r, inner).ljust(inner)} ║" for r in rows]
-    return [top] + body + ["╚" + "═" * (WIDTH - 2) + "╝"]
-
-
-def task_rows(t):
-    inner = WIDTH - 4
-    rows = []
-    if t.get("branch"):
-        rows.append(t["branch"])
-    meta = " · ".join(x for x in (diff_text(t), detail(t)) if x)
-    if meta:
-        rows += wrap(meta)
-    for f in t.get("findings", []):
-        rows += wrap(f, "! ")
-    for a in t.get("asks", []):
-        rows.append(f"? {fit(a['text'], inner - 2)}")
-    un = t.get("unverified", [])
-    if un:
-        rows.append(f"{len(un)} unverified")
-    return rows
-
-
 def board(data):
+    """The state glyph and the slug, one task per line. Details live in the worker's pane and its report."""
     tasks = data.get("tasks") or []
     head = "NGISA  " + data.get("repo", "")
     if data.get("base"):
@@ -1290,9 +1220,7 @@ def board(data):
     lines = [head.rstrip()]
     if not tasks:
         return lines + [" no tasks yet"]
-    for t in tasks:
-        lines += card(t, task_rows(t))
-    return lines
+    return lines + [f" {STATES.get(t.get('state'), '·')} {t['slug']}" for t in tasks]
 
 
 def parse_ask(raw):
