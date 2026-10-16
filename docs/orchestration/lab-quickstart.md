@@ -7,7 +7,7 @@ want to test on. Nothing here touches `~/.claude` or your real repo.
 
 ```bash
 brew install jq            # the scripts read WezTerm's pane list with jq
-python3 --version          # agent-view and ngisa-statusline are Python 3 scripts (standard library only)
+python3 --version          # agent-view, ngisa-statusline and ngisa-report are Python 3 scripts (standard library only)
 mkdir -p ~/bin ~/lab
 grep -q 'HOME/bin' ~/.zshrc || echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
@@ -33,7 +33,13 @@ The task text gives the paths you may touch, the stack and the test command. Any
 2. TDD: write the failing test, show it red, make it green. Use the task's test command, else the one in CLAUDE.md or `tool/ci_local.sh`.
 3. `./tool/ci_local.sh` must exit 0 before you stop. Never edit `tool/ci_local.sh`, `tool/setup.sh` or `tool/known_failures.txt`, and never run `--record-baseline`. `./tool/ci_local.sh <test paths>` runs just those tests for quick checks; the full gate must still exit 0 before you stop. A test listed in `tool/known_failures.txt` was already failing before you; leave it. Never skip, delete or loosen tests, lint rules or analyzer config to get green. If setup or the gate cannot run, or fails for a reason outside your task, stop and report the exact error. A red gate in the report is fine; a faked green is not.
 4. Commit on your branch. Never push, never merge, never touch main.
-5. Final message, exactly: branch name, files changed, test command + result, anything you could NOT verify and why. Write it in caveman ultra (no articles or filler, fragments OK); branch, paths, commands and errors stay exact.
+5. Final message: exactly these six lines, nothing before or after, in caveman ultra (no articles or filler, fragments OK); branch, paths, commands and errors stay exact.
+   branch: <branch name>
+   files: <paths changed, comma separated>
+   gate: <./tool/ci_local.sh exit code and test count, or the exact error>
+   scope: in paths | outside: <paths>
+   unverified: <what you could NOT verify and why, or none>
+   asks: <decisions you deferred, each with your recommendation, separated by ";", or none>
 Do not edit files outside the task's listed paths. If you must, stop and say so.
 EOF
 
@@ -46,16 +52,22 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    Two tasks that touch the same file are NOT parallel; chain them.
 3. Spawn each parallel task with `agent-wall.sh <task-slug> implementer sonnet "<task text>"`.
    Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
+   Before the first spawn of a new plan run `ngisa-report clear`. After each spawn, and after each relay that sends a worker back to work, run `ngisa-report set <slug> --state working`.
    If you create a worker's worktree yourself with `git worktree add`, git skips `.worktreeinclude`: tell the worker in its task text
    to run `worktree-include` before anything else, so it gets `tool/setup.sh` and `tool/ci_local.sh`.
    More tasks than free slots: keep a queue in your reply, start the next one each time a worker's report arrives.
    You may not edit code yourself (your settings deny the code dirs), even for a one-line fix. Every code change goes to a worker.
 4. When a worker's report arrives, run `gate-check <branch> <base branch>` (branch from the report; base is the branch the plan was cut from).
-   Exit 0: go on. Exit 1 (findings) or 2 (error, e.g. wrong branch name): stop, show me its output, do not merge that branch until I decide. It only compares the gate files and the
+   Exit 0: go on. Exit 1 (findings) or 2 (error, e.g. wrong branch name): stop, do not merge that branch until I decide. Exit 1: record the row as `fail` with each finding line as `--finding`, then send me `ngisa-report ask <slug>` (no worker ask: it gives the default `merge anyway?`). Exit 2: show me the error. It only compares the gate files and the
    lint/analyzer/CI config; I read the diff myself, so do not add your own review.
+   Then record the row: `ngisa-report set <slug> --base <base branch> --branch <branch> --state ok|fail|blocked --gate '<gate line>' --tests '<n pass>' --diff <files> <added> <removed>`
+   plus `--finding '<text>'` per gate-check finding, `--ask '<text>|<why>|<rec>'` per item in the worker's `asks:` (leave `<why>` empty when the worker gave none: never invent one), `--unverified '<text>'` per item in its `unverified:`.
+   `fail` when gate-check exited 1 or the gate was red, `blocked` when it waits on me, else `ok`; a worker still running is `--state working`.
+   Diff counts: `git diff --shortstat <base>...<branch>`. Always single-quote text values (worker and gate-check text holds `$` and backticks); a `'` inside text becomes `'\''`.
 5. Only one agent runs integration tests / the emulator at a time.
 6. Merge task branches that passed the latest gate-check (or that I allowed) into a local feature branch and run ./tool/ci_local.sh. This is a lab: never push on your own.
-7. Report to me: one table (task | branch | gate-check | tests | unverified items).
+7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board), then the PR link if any. Never retype or reword it: the report pane shows the same data.
+Ask: when you need a decision, run `ngisa-report ask <slug>` and send only its output, one ask per message, then wait. Never put an ask in prose.
 Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
   Spawn ONE implementer with exactly those paths, then run gate-check as usual. Anything bigger: say it needs a plan.
 Relay: when I ask for something extra from a worker (e.g. "have it carve", "fix the lint"), SendMessage it to
@@ -70,6 +82,7 @@ Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, q
   Not: "I have started the implementer worker. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Gate-check next."
   Long text too (findings, decisions): numbered fragments, never prose paragraphs.
   Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."
+  Boards and asks are templates: paste them, do not rewrite them.
 Never: merge to main, push or open a PR without my ask, publish, touch store/remote-config/signing,
   delete branches with unmerged work.
 EOF
@@ -85,7 +98,7 @@ cat > $KIT/settings.local.json <<'EOF'
       "Bash(php -l:*)", "Bash(php tests/:*)", "Bash(diff:*)",
       "Bash(./tool/setup.sh)", "Bash(./tool/ci_local.sh)", "Bash(./tool/ci_local.sh test/*)", "Bash(./tool/ci_local.sh tests/*)",
       "Bash(git status)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)", "Bash(git commit:*)",
-      "Bash(git merge:*)", "Bash(git checkout:*)", "Bash(agent-wall.sh:*)", "Bash(worktree-include)", "Bash(gate-check:*)"
+      "Bash(git merge:*)", "Bash(git checkout:*)", "Bash(agent-wall.sh:*)", "Bash(worktree-include)", "Bash(gate-check:*)", "Bash(ngisa-report:*)"
     ],
     "deny": [
       "Bash(git push:*)", "Bash(flutter pub publish:*)", "Bash(dart pub publish:*)",
@@ -341,7 +354,7 @@ kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/ngisa}
 # the repo's own deny list (agent-init writes it from the detected stack); else the kit's Flutter default
 cfg="$dir/.claude/ngisa-settings.json"; [[ -f $cfg ]] || cfg="$kit/ngisa-settings.json"
 # the caveman rule also goes in the system prompt, where Opus weighs it more than a hook reminder
-style='Caveman ultra applies to EVERY message you write to the user: status updates, spawn notices, summaries, questions, report tables. Drop articles (a/an/the), filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality. Paths, branch names, commands, session ids, quoted errors: exact. Code, commits, PR text, security warnings, irreversible-action confirmations: normal prose. Not: "I have started the implementer worker on this fix. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Gate-check next." Long text too (findings, decisions): numbered fragments, never prose paragraphs. Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."'
+style='Caveman ultra applies to EVERY message you write to the user: status updates, spawn notices, summaries, questions, report tables. Drop articles (a/an/the), filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality. Paths, branch names, commands, session ids, quoted errors: exact. Code, commits, PR text, security warnings, irreversible-action confirmations: normal prose. Not: "I have started the implementer worker on this fix. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Gate-check next." Long text too (findings, decisions): numbered fragments, never prose paragraphs. Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes." Reports and asks are templates: paste the output of ngisa-report set (the board) or ngisa-report ask unchanged; do not reword them.'
 # status line: the user's own line, then a roster of this repo's workers (ngisa-statusline). Merged into a temp copy of the settings.
 sl=$(command -v ngisa-statusline || true)
 if [[ -n $sl ]] && jq -e . "$cfg" >/dev/null 2>&1; then
@@ -404,8 +417,13 @@ equalize_column() {
 }
 alive() { local id; for id in ${others[@]+"${others[@]}"}; do [[ $id == "$1" ]] && return 0; done; return 1; }
 for f in "$state/$repo"-*; do [[ -f $f ]] && ! alive "$(cat "$f")" && rm -f "$f"; done
+# the report board (ngisa-report view) is a strip under the NGISA pane. It is not a worker pane: left out of the slot count and the equal heights.
+report_file="$state/report.$repo"
+report_id=$(cat "$report_file" 2>/dev/null || true)
+if [[ -n $report_id ]] && ! alive "$report_id"; then rm -f "$report_file"; report_id=; fi
 # the right-hand column holds the worker panes, one per agent
-impl=(${others[@]+"${others[@]}"})
+impl=()
+for id in ${others[@]+"${others[@]}"}; do [[ $id == "$report_id" ]] || impl+=("$id"); done
 if (( ${#impl[@]} >= 3 )); then
   echo "tab full: 3 agents already shown for $repo" >&2; exit 1
 fi
@@ -422,6 +440,10 @@ else
 fi
 echo "$new" > "$state/$name"
 equalize_column ${impl[@]+"${impl[@]}"} "$new"
+# open the report board once, with the first worker, under the NGISA pane; it stays until its pane is closed
+if [[ -z $report_id ]] && command -v ngisa-report >/dev/null 2>&1; then
+  rep=$(wezterm cli split-pane --pane-id "$me" --bottom --percent 20 -- env NGISA_REPO="$repo" "$(command -v ngisa-report)" view) && echo "$rep" > "$report_file" || true
+fi
 wezterm cli activate-pane --pane-id "$me" >/dev/null 2>&1 || true
 EOF
 
@@ -1066,6 +1088,271 @@ if __name__ == "__main__":
     main()
 EOF
 
+cat > ~/bin/ngisa-report <<'EOF'
+#!/usr/bin/env python3
+"""Report board for the NGISA: one row per worker task, asks and findings inline.
+
+  ngisa-report set <slug> --state ok|fail|working|blocked [--base B] [--branch X] [--gate G] [--tests T]
+                  [--diff FILES ADD DEL] [--finding F]... [--ask "text|why|rec"]... [--unverified U]...
+      replace the row for <slug>, then print the plain-text board (paste it into chat unchanged)
+  ngisa-report show [--color]   print the board
+  ngisa-report ask <slug>       print the ask block (G2) for each ask of <slug>
+  ngisa-report view [--once]    read-only refresh loop for a pane, full colour
+  ngisa-report clear            delete this repo's report
+
+One report per repo: ~/.cache/ngisa/report/ngisa-<repo>.json (XDG_CACHE_HOME respected). Python 3 standard library only.
+"""
+import argparse, json, os, shutil, subprocess, sys, tempfile, time
+
+# same four semantic colours as agent-view; everything else is dim or plain. Every state also has a symbol.
+TEAL, AMBER, GREEN, RED = "38;2;60;196;178", "38;2;231;164;71", "38;2;76;198;138", "38;2;255;107;95"
+DIM, BOLD = "2", "1"
+STATES = {"ok": ("✓", GREEN), "fail": ("✗", RED), "working": ("▶", TEAL), "blocked": ("?", AMBER)}
+LEGEND = "✓ ok  ✗ fail  ▶ working  ? asks you  ! finding"
+
+
+def paint(code, text, color):
+    return f"\033[{code}m{text}\033[0m" if color and code else text
+
+
+def repo_name():
+    env = os.environ.get("NGISA_REPO")
+    if env:
+        return env
+    try:
+        out = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                             capture_output=True, text=True, check=True).stdout.strip()
+        return os.path.basename(os.path.dirname(out.rstrip("/")))
+    except Exception:
+        return os.path.basename(os.getcwd())
+
+
+def report_path(repo):
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    return os.path.join(base, "ngisa", "report", f"ngisa-{repo}.json")
+
+
+def load(path):
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) and isinstance(data.get("tasks"), list) else None
+    except (OSError, ValueError):
+        return None
+
+
+def save(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, path)
+
+
+def detail(t):
+    if t.get("state") == "fail":
+        return t.get("gate") or t.get("tests") or ""
+    return t.get("tests") or t.get("gate") or ""
+
+
+def diff_text(t):
+    d = t.get("diff")
+    return f"+{d['add']} −{d['del']}" if d else ""
+
+
+def line(parts, width, color):
+    """Join (colour code, text) parts; cut at `width` visible characters with an ellipsis. width None = no cut."""
+    out, used = [], 0
+    for code, text in parts:
+        if width is not None:
+            room = width - used
+            if room <= 0:
+                break
+            if len(text) > room:
+                text = text[: room - 1] + "…"
+        out.append(paint(code, text, color))
+        used += len(text)
+    s = "".join(out)
+    return s if color else s.rstrip()
+
+
+def board(data, width, color):
+    tasks = data.get("tasks") or []
+    head = [(BOLD + ";" + TEAL, "NGISA"), (None, "  " + data.get("repo", ""))]
+    if data.get("base"):
+        head.append((DIM, "  " + data["base"]))
+    lines = [line(head, width, color)]
+    if not tasks:
+        lines.append(line([(DIM, " no tasks yet")], width, color))
+        return lines
+    sw = max(len(t["slug"]) for t in tasks)
+    bw = max(len(t.get("branch", "")) for t in tasks)
+    show_branch = width is None or width >= 60
+    for t in tasks:
+        glyph, code = STATES.get(t.get("state"), ("·", DIM))
+        parts = [(None, " "), (code, glyph), (None, " "), (BOLD, t["slug"].ljust(sw))]
+        if show_branch:
+            parts.append((DIM, "  " + t.get("branch", "").ljust(bw)))
+        if detail(t):
+            parts.append((None, "  " + detail(t)))
+        if diff_text(t):
+            parts.append((DIM, "  " + diff_text(t)))
+        lines.append(line(parts, width, color))
+        for f in t.get("findings", []):
+            lines.append(line([(None, "     "), (RED, "! "), (None, f)], width, color))
+        for a in t.get("asks", []):
+            p = [(None, "     "), (AMBER, "? "), (None, a["text"])]
+            if a.get("rec"):
+                p.append((GREEN, f" [rec {a['rec']}]"))
+            lines.append(line(p, width, color))
+    lines.append("")
+    for t in tasks:
+        for u in t.get("unverified", []):
+            lines.append(line([(DIM, f" unverified: {t['slug']} {u}")], width, color))
+    lines.append(line([(DIM, " " + LEGEND)], width, color))
+    return lines
+
+
+def fit_rows(lines, rows, color):
+    """Keep the header and as many rows as fit in `rows`; the last row says how many were left out."""
+    if len(lines) <= rows or rows < 2:
+        return lines[:rows] if rows < 2 else lines
+    keep = lines[: rows - 1]
+    return keep + [line([(DIM, f" +{len(lines) - len(keep)} more")], None, color)]
+
+
+def ask_block(t, color):
+    glyph, code = STATES.get(t.get("state"), ("·", DIM))
+    out = [line([(code, f"{glyph} {t['slug']}"), (None, "  " + detail(t))], None, color)]
+    for f in t.get("findings", []):
+        out.append(line([(None, "  "), (RED, "! "), (None, f)], None, color))
+    for a in t.get("asks", []):
+        if a.get("why"):
+            out.append(line([(DIM, f"  why: {a['why']}")], None, color))
+        p = [(None, "  "), (AMBER, "? "), (None, a["text"]), (DIM, "   y · n · d diff")]
+        if a.get("rec"):
+            p.append((GREEN, f"   rec {a['rec']}"))
+        out.append(line(p, None, color))
+    return out
+
+
+def parse_ask(raw):
+    text, why, rec = (raw.split("|", 2) + ["", ""])[:3]
+    return {"text": text.strip(), "why": why.strip(), "rec": rec.strip()}
+
+
+def cmd_set(a):
+    repo = repo_name()
+    path = report_path(repo)
+    data = load(path) or {"repo": repo, "tasks": []}
+    data["repo"] = repo
+    if a.base:
+        data["base"] = a.base
+    row = {"slug": a.slug, "branch": a.branch or "", "state": a.state, "gate": a.gate or "", "tests": a.tests or "",
+           "diff": {"files": a.diff[0], "add": a.diff[1], "del": a.diff[2]} if a.diff else None,
+           "findings": a.finding or [], "asks": [parse_ask(x) for x in a.ask or []], "unverified": a.unverified or []}
+    for i, t in enumerate(data["tasks"]):
+        if t.get("slug") == a.slug:
+            data["tasks"][i] = row
+            break
+    else:
+        data["tasks"].append(row)
+    data["updated"] = int(time.time())
+    save(path, data)
+    print("\n".join(board(data, None, False)))
+
+
+def cmd_show(a):
+    data = load(report_path(repo_name()))
+    if not data:
+        print("ngisa-report: no report", file=sys.stderr)
+        return 1
+    print("\n".join(board(data, None, a.color)))
+
+
+def cmd_ask(a):
+    data = load(report_path(repo_name()))
+    rows = [t for t in (data or {}).get("tasks", []) if t.get("slug") == a.slug]
+    if rows and not rows[0].get("asks") and rows[0].get("state") == "fail":
+        # a red gate with no worker ask still needs a decision: default ask, safe recommendation
+        rows[0] = dict(rows[0], asks=[{"text": "merge anyway?", "why": "", "rec": "n"}])
+    if not rows or not rows[0].get("asks"):
+        print(f"ngisa-report: no asks for {a.slug}", file=sys.stderr)
+        return 1
+    print("\n".join(ask_block(rows[0], False)))
+
+
+def cmd_clear(a):
+    try:
+        os.remove(report_path(repo_name()))
+    except OSError:
+        pass
+
+
+def cmd_view(a):
+    path = report_path(repo_name())
+    color = not os.environ.get("NO_COLOR")
+
+    def frame():
+        data = load(path)
+        if not data:
+            return [paint(DIM, "no report yet", color)]
+        size = shutil.get_terminal_size((80, 24))
+        return fit_rows(board(data, size.columns, color), size.lines, color)
+
+    if a.once:
+        print("\n".join(frame()))
+        return 0
+    out = sys.stdout
+    out.write("\033[?25l\033[2J")
+    try:
+        while True:
+            # no newline after the last row: a board as tall as the pane would scroll the screen on every redraw
+            out.write("\033[H" + "\033[K\n".join(frame()) + "\033[K\033[J")
+            out.flush()
+            time.sleep(2)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        out.write("\033[?25h")
+        out.flush()
+    return 0
+
+
+def main():
+    p = argparse.ArgumentParser(prog="ngisa-report")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("set")
+    s.add_argument("slug")
+    s.add_argument("--state", required=True, choices=sorted(STATES))
+    s.add_argument("--base")
+    s.add_argument("--branch")
+    s.add_argument("--gate")
+    s.add_argument("--tests")
+    s.add_argument("--diff", nargs=3, type=int, metavar=("FILES", "ADD", "DEL"))
+    s.add_argument("--finding", action="append")
+    s.add_argument("--ask", action="append")
+    s.add_argument("--unverified", action="append")
+    s.set_defaults(fn=cmd_set)
+    sh = sub.add_parser("show")
+    sh.add_argument("--color", action="store_true")
+    sh.set_defaults(fn=cmd_show)
+    k = sub.add_parser("ask")
+    k.add_argument("slug")
+    k.set_defaults(fn=cmd_ask)
+    v = sub.add_parser("view")
+    v.add_argument("--once", action="store_true")
+    v.set_defaults(fn=cmd_view)
+    c = sub.add_parser("clear")
+    c.set_defaults(fn=cmd_clear)
+    a = p.parse_args()
+    return a.fn(a) or 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+EOF
+
 cat > ~/bin/ngisa-statusline <<'EOF'
 #!/usr/bin/env python3
 """Status line for the NGISA: your own status line, then one extra line listing this repo's background workers.
@@ -1214,11 +1501,13 @@ case $url in
 esac
 EOF
 
-chmod +x ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/agent-view ~/bin/ngisa-statusline ~/bin/worktree-include ~/bin/caveman-ultra-hook ~/bin/agent-pr ~/bin/gate-check
-which make-lab repo-tab agent-wall.sh agent-view ngisa-statusline worktree-include agent-pr caveman-ultra-hook gate-check      # all nine must print a path
+chmod +x ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/agent-view ~/bin/ngisa-statusline ~/bin/worktree-include ~/bin/caveman-ultra-hook ~/bin/agent-pr ~/bin/gate-check ~/bin/ngisa-report
+which make-lab repo-tab agent-wall.sh agent-view ngisa-statusline worktree-include agent-pr caveman-ultra-hook gate-check ngisa-report      # all ten must print a path
 ```
 
 (macOS ships bash 3.2, so `agent-wall.sh` here avoids `mapfile` and negative array indexes.)
+
+`ngisa-report` is the report board: the NGISA runs `ngisa-report set` per worker report and pastes its output; `agent-wall.sh` opens `ngisa-report view` as a strip under the NGISA pane.
 
 ## Step 4. Make the lab copy and open it
 

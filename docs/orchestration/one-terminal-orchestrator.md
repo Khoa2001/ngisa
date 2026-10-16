@@ -101,7 +101,13 @@ The task text gives the paths you may touch, the stack and the test command. Any
 2. TDD: write the failing test, show it red, make it green. Use the task's test command, else the one in CLAUDE.md or `tool/ci_local.sh`.
 3. `./tool/ci_local.sh` must exit 0 before you stop. Never edit `tool/ci_local.sh`, `tool/setup.sh` or `tool/known_failures.txt`, and never run `--record-baseline`. `./tool/ci_local.sh <test paths>` runs just those tests for quick checks; the full gate must still exit 0 before you stop. A test listed in `tool/known_failures.txt` was already failing before you; leave it. Never skip, delete or loosen tests, lint rules or analyzer config to get green. If setup or the gate cannot run, or fails for a reason outside your task, stop and report the exact error. A red gate in the report is fine; a faked green is not.
 4. Commit on your branch. Never push, never merge, never touch main.
-5. Final message, exactly: branch name, files changed, test command + result, anything you could NOT verify and why. Write it in caveman ultra (no articles or filler, fragments OK); branch, paths, commands and errors stay exact.
+5. Final message: exactly these six lines, nothing before or after, in caveman ultra (no articles or filler, fragments OK); branch, paths, commands and errors stay exact.
+   branch: <branch name>
+   files: <paths changed, comma separated>
+   gate: <./tool/ci_local.sh exit code and test count, or the exact error>
+   scope: in paths | outside: <paths>
+   unverified: <what you could NOT verify and why, or none>
+   asks: <decisions you deferred, each with your recommendation, separated by ";", or none>
 Do not edit files outside the task's listed paths. If you must, stop and say so.
 ```
 
@@ -129,10 +135,16 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    and the test command, and that text goes into the worker's prompt. A repo can mix stacks: name the stack per task.
    Two tasks that touch the same file are NOT parallel; chain them.
 3. Dispatch parallel tasks to `implementer` (max 3 at once). Chain dependent ones.
-4. For each finished task, run `gate-check <branch> <base branch>`. Exit 1: stop, show me its output, do not merge that branch until I decide. Exit 0: go on. It only compares the gate files and the lint/analyzer/CI config; I read the diff myself, so do not add your own review.
+   Before the first spawn of a new plan run `ngisa-report clear`. After each spawn, and after each relay that sends a worker back to work, run `ngisa-report set <slug> --state working`.
+4. For each finished task, run `gate-check <branch> <base branch>`. Exit 1: stop, do not merge that branch until I decide: record the row as `fail` with each finding line as `--finding`, then send me `ngisa-report ask <slug>` (no worker ask: it gives the default `merge anyway?`). Exit 0: go on. It only compares the gate files and the lint/analyzer/CI config; I read the diff myself, so do not add your own review.
+   Then record the row: `ngisa-report set <slug> --base <base branch> --branch <branch> --state ok|fail|blocked --gate '<gate line>' --tests '<n pass>' --diff <files> <added> <removed>`
+   plus `--finding '<text>'` per gate-check finding, `--ask '<text>|<why>|<rec>'` per item in the worker's `asks:` (leave `<why>` empty when the worker gave none: never invent one), `--unverified '<text>'` per item in its `unverified:`.
+   `fail` when gate-check exited 1 or the gate was red, `blocked` when it waits on me, else `ok`; a worker still running is `--state working`.
+   Diff counts: `git diff --shortstat <base>...<branch>`. Always single-quote text values (worker and gate-check text holds `$` and backticks); a `'` inside text becomes `'\''`.
 5. Only one agent runs integration tests / the emulator at a time.
 6. Merge task branches that passed the latest gate-check (or that I allowed) into the feature branch locally, run ./tool/ci_local.sh, push the feature branch, open a DRAFT PR.
-7. Report to me: one table (task | branch | gate-check | tests | unverified items), plus the PR link.
+7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board), then the PR link if any. Never retype or reword it: the report pane shows the same data.
+Ask: when you need a decision, run `ngisa-report ask <slug>` and send only its output, one ask per message, then wait. Never put an ask in prose.
 Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
   Spawn ONE implementer with exactly those paths, then run gate-check as usual. Anything bigger: say it needs a plan.
 Relay: when I ask for something extra from a worker (e.g. "have it carve", "fix the lint"), SendMessage it to
@@ -144,6 +156,7 @@ Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, q
   Not: "I have started the implementer worker. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Gate-check next."
   Long text too (findings, decisions): numbered fragments, never prose paragraphs.
   Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."
+  Boards and asks are templates: paste them, do not rewrite them.
 Never: merge to main, force-push, publish, touch store/remote-config/signing, delete branches with unmerged work.
 ```
 
@@ -275,16 +288,23 @@ Notes:
 ```md
 3. Spawn each parallel task with `agent-wall.sh <task-slug> implementer sonnet "<task text>"`.
    Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
+   Before the first spawn of a new plan run `ngisa-report clear`. After each spawn, and after each relay that sends a worker back to work, run `ngisa-report set <slug> --state working`.
    If you create a worker's worktree yourself with `git worktree add`, git skips `.worktreeinclude`: tell the worker in its task text
    to run `worktree-include` before anything else, so it gets `tool/setup.sh` and `tool/ci_local.sh`.
 4. When a worker's report arrives, run `gate-check <branch> <base branch>` (branch from the report; base is the branch the plan was cut from).
-   Exit 0: go on. Exit 1 (findings) or 2 (error, e.g. wrong branch name): stop, show me its output, do not merge that branch until I decide. It only compares the gate files and the
+   Exit 0: go on. Exit 1 (findings) or 2 (error, e.g. wrong branch name): stop, do not merge that branch until I decide. Exit 1: record the row as `fail` with each finding line as `--finding`, then send me `ngisa-report ask <slug>` (no worker ask: it gives the default `merge anyway?`). Exit 2: show me the error. It only compares the gate files and the
    lint/analyzer/CI config; I read the diff myself, so do not add your own review.
+   Then record the row: `ngisa-report set <slug> --base <base branch> --branch <branch> --state ok|fail|blocked --gate '<gate line>' --tests '<n pass>' --diff <files> <added> <removed>`
+   plus `--finding '<text>'` per gate-check finding, `--ask '<text>|<why>|<rec>'` per item in the worker's `asks:` (leave `<why>` empty when the worker gave none: never invent one), `--unverified '<text>'` per item in its `unverified:`.
+   `fail` when gate-check exited 1 or the gate was red, `blocked` when it waits on me, else `ok`; a worker still running is `--state working`.
+   Diff counts: `git diff --shortstat <base>...<branch>`. Always single-quote text values (worker and gate-check text holds `$` and backticks); a `'` inside text becomes `'\''`.
 ```
 
 Allow exactly `"Bash(agent-wall.sh:*)"` in `~/.claude/settings.json`. Don't allow `Bash(wezterm cli:*)`.
 
 Caveman ultra for the NGISA and the workers' reports comes from a `SessionStart` + `UserPromptSubmit` hook that runs `caveman-ultra-hook` (it adds context; nothing is blocked), plus the same rule in the NGISA's system prompt (`repo-tab` passes `--append-system-prompt`), because a one-line reminder alone was not enough for Opus. Code, commits and PR text stay normal. The lab version of these rules, which routes PRs through `agent-pr`, is in `lab-quickstart.md`.
+
+Reports and asks are fixed templates, not free prose. The NGISA records each worker report with `ngisa-report set` (script block in `lab-quickstart.md`) and pastes its output as the final report: one line per task with a state symbol, findings (`!`) and asks (`?`, with a recommendation) inline under their row, unverified items and a legend (`✓ ok  ✗ fail  ▶ working  ? asks you  ! finding`). `agent-wall.sh` opens `ngisa-report view` once as a short strip under the NGISA pane: the same board in colour (teal working, amber needs you, green done, red error), read-only, not counted in the 3 worker slots. A decision comes as `ngisa-report ask <slug>`: the finding, why it matters, `y · n · d diff` and the recommendation. The implementer's final message is six fixed lines (`branch / files / gate / scope / unverified / asks`) so the NGISA can map them to the flags and a missing line shows at once.
 
 Don't run NGISA sessions or agents in `bypassPermissions`: in that mode incoming reports from other sessions
 are held for approval instead of delivered.

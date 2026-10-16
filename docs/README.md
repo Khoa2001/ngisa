@@ -7,7 +7,7 @@ Docs from the "hand-off" project: can an agent system ship production software f
 ## orchestration/
 - `one-terminal-orchestrator.md` (+ `.vi.md`): the main design. One WezTerm window, one NGISA per repo, implementer agents in worktrees, hooks, human gates, Max plan limits. Section 2a = `agents/*.md`, 2c = `orchestrating.md`, 2d = `settings.local.json`.
 - `lab-setup.md`: try the orchestrator in a lab copy (`~/lab/<repo>`) without touching global config; defines this kit and `make-lab`.
-- `lab-quickstart.md`: copy-paste version of the lab setup, including the ten `~/bin` scripts (agent-init, repo-tab, agent-wall.sh, agent-view, ngisa-statusline, worktree-include, make-lab, agent-pr, caveman-ultra-hook, gate-check).
+- `lab-quickstart.md`: copy-paste version of the lab setup, including the eleven `~/bin` scripts (agent-init, repo-tab, agent-wall.sh, agent-view, ngisa-statusline, ngisa-report, worktree-include, make-lab, agent-pr, caveman-ultra-hook, gate-check).
 
 ## verification/
 - `cut-verification-time.md` (+ `.vi.md`): cutting the time you spend checking agent output: enforcing hooks, definition of done as commands, gating the plan instead of the diff, CI as second reviewer, what stays human.
