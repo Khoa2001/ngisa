@@ -69,6 +69,9 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
 6. Merge task branches that passed the latest gate-check (or that I allowed) into a local feature branch and run ./tool/ci_local.sh. Never push on your own.
    Do the merge in its own worktree (`git worktree add .claude/worktrees/integration -b <feature branch>`). Never check out or merge in the main checkout: it may hold my uncommitted work.
 7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board), then the PR link if any. Never retype or reword it.
+Quiet: my screen is for decisions, not a log. While workers run, say ONE line per event (spawn: `<slug> spawned. Gate-check next.`).
+  No board until a worker reports, no session ids or `claude attach` hints (the worker pane shows its work), and never mention
+  hook blocks, retries or workarounds: fix them silently. Only asks, the board after a report, and the PR link get more than one line.
 Ask: when you need a decision, run `ngisa-report ask <slug>` and send only its output, one ask per message, then wait. Never put an ask in prose.
 Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
   Spawn ONE implementer with exactly those paths, then run gate-check as usual. Anything bigger: say it needs a plan.
@@ -430,8 +433,13 @@ if (( ${#impl[@]} >= 3 )); then
 fi
 claude --bg --name "$name" --agent "$agent" --model "$model" \
   "$prompt  When finished, send your final report to @ngisa-$repo with SendMessage."
-# panes are read-only views by default (agent-view); AGENT_VIEW=attach gives the full claude attach pane with an input box
-if [[ ${AGENT_VIEW:-view} == attach ]]; then viewer=(claude attach "$name"); else viewer=("$(command -v agent-view)" "$name"); fi
+# worker panes: agent-tail by default (live stream of messages and tool calls, no input box, no status bar, read-only);
+# AGENT_VIEW=attach gives the full claude attach pane with an input box; AGENT_VIEW=status gives the one-line status view
+case ${AGENT_VIEW:-tail} in
+  attach) viewer=(claude attach "$name");;
+  status) viewer=("$(command -v agent-view)" "$name");;
+  *) viewer=("$(command -v agent-tail)" "$name");;
+esac
 if (( ${#impl[@]} == 0 )); then
   new=$(wezterm cli split-pane --pane-id "$me" --right --percent 55 -- "${viewer[@]}")
 else
@@ -491,6 +499,129 @@ for m in composer.json package.json pubspec.yaml; do
 done
 (( fail )) && exit 1
 echo "gate-check: clean ($branch vs $base)"
+EOF
+
+cat > ~/bin/agent-tail <<'EOF'
+#!/usr/bin/env python3
+"""Live stream of one background worker: what Claude shows (messages, tool calls, results), without the input box or status bar.
+Read only: nothing typed here reaches the worker. To answer a stuck worker: claude attach <name>.
+Reads the session transcript (an internal format) through agent-view's parser. Env: AGENT_VIEW_INTERVAL (seconds, default 1),
+AGENT_VIEW_ONCE=1 (draw once and exit)."""
+import glob, importlib.machinery, importlib.util, os, re, shutil, sys, textwrap, time
+
+_p = os.path.join(os.path.dirname(os.path.realpath(__file__)), "agent-view")
+_l = importlib.machinery.SourceFileLoader("agent_view", _p)
+av = importlib.util.module_from_spec(importlib.util.spec_from_loader("agent_view", _l))
+_l.exec_module(av)
+PURPLE, GREEN, RED, DIM = "38;2;190;132;255", "38;2;76;198;138", "38;2;255;107;95", "2"
+c, dim, fit = av.c, av.dim, av.fit
+
+
+def one(s, n):
+    s = " ".join(str(s).split())
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def nlines(s):
+    return len(str(s).splitlines()) if s else 0
+
+
+def head(name, inp, wt):
+    inp = inp or {}
+    p = av.short_path(inp.get("file_path") or inp.get("path") or "", wt)
+    if name == "Bash":
+        return "Bash", one(inp.get("command", ""), 400)
+    if name in ("Edit", "MultiEdit"):
+        return "Update", p
+    if name == "Write":
+        return "Write", p
+    if name == "Read":
+        return "Read", p
+    if name in ("Grep", "Glob"):
+        return name, one(inp.get("pattern", ""), 120)
+    if name == "SendMessage":
+        return "SendMessage", one(inp.get("to", ""), 60)
+    return name, one(next((v for v in inp.values() if isinstance(v, str)), ""), 120)
+
+
+def result_line(name, inp, res, text):
+    if res is None:
+        return None, False
+    failed = bool(res.get("is_error"))
+    inp = inp or {}
+    if failed:
+        return av.plain_error(text) or "error", True
+    if name == "Edit":
+        return f"+{nlines(inp.get('new_string'))} −{nlines(inp.get('old_string'))}", False
+    if name == "Write":
+        return f"{nlines(inp.get('content'))} lines", False
+    if name == "Read":
+        return f"{nlines(text)} lines", False
+    lines = [l for l in text.splitlines() if l.strip()]
+    if not lines:
+        return "done", False
+    last = lines[-1] if name == "Bash" else lines[0]
+    return one(last, 300) + (f"  (+{len(lines) - 1} lines)" if len(lines) > 1 else ""), False
+
+
+def render(name, w):
+    info = av.load_session(name)
+    if not info:
+        return [f"{name}: no such background session (yet)"], None
+    sid = info.get("sessionId", "")
+    found = glob.glob(os.path.expanduser(f"~/.claude/projects/*/{sid}.jsonl"))
+    events, cwd, *_ = av.parse(found[0]) if found else ([], None, "", None, "")
+    wt = av.find_worktree(events, cwd or info.get("cwd") or ".")
+    out = []
+    for ev in events:
+        if ev["kind"] == "say":
+            for i, l in enumerate(textwrap.wrap(ev["text"].replace("\n", " "), w - 2) or [""]):
+                out.append((c(PURPLE, "● ") if i == 0 else "  ") + l)
+            out.append("")
+            continue
+        text = av.result_text(ev["result"])
+        title, arg = head(ev["name"], ev["input"], wt)
+        out.append(c(PURPLE, "● ") + c("1", title) + (dim("(") + one(arg, w - len(title) - 6) + dim(")") if arg else ""))
+        rl, failed = result_line(ev["name"], ev["input"], ev["result"], text)
+        if rl is None:
+            out.append(dim("  ⎿ ") + c(DIM, "running…"))
+        else:
+            out.append(dim("  ⎿ ") + (c(RED, one(rl, w - 6)) if failed else dim(one(rl, w - 6))))
+        out.append("")
+    state = info.get("state") or info.get("status") or ""
+    return out, state
+
+
+def main():
+    name = sys.argv[1] if len(sys.argv) > 1 else sys.exit("usage: agent-tail <session-name>")
+    interval = float(os.environ.get("AGENT_VIEW_INTERVAL", "1"))
+    once = os.environ.get("AGENT_VIEW_ONCE") == "1"
+
+    def paint():
+        size = shutil.get_terminal_size((100, 30))
+        lines, state = render(name, max(size.columns, 40))
+        while lines and not lines[-1]:
+            lines.pop()
+        if state and state not in ("working", "running", "busy"):
+            lines += ["", c(GREEN, "✓ ") + dim(f"session {state}")]
+        lines = lines[-(size.lines - 1):]   # newest at the bottom, like a terminal
+        pad = [""] * max(0, size.lines - 1 - len(lines))
+        sys.stdout.write("\033[H" + "".join(fit(l, size.columns) + "\033[K\n" for l in pad + lines) + "\033[J")
+        sys.stdout.flush()
+    if once:
+        paint(); return
+    sys.stdout.write("\033[?25l\033[2J")
+    try:
+        while True:
+            paint(); time.sleep(interval)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        sys.stdout.write("\033[?25h"); sys.stdout.flush()
+
+
+if __name__ == "__main__":
+    main()
 EOF
 
 cat > ~/bin/agent-view <<'EOF'
@@ -1408,6 +1539,10 @@ cat > ~/bin/ngisa-guard <<'EOF'
 set -uo pipefail
 cmd=$(jq -r '.tool_input.command // empty' 2>/dev/null) || exit 0
 [[ -n $cmd ]] || exit 0
+# agent-wall.sh and ngisa-report carry free text (task text, findings) that may name tests or code dirs: judge only the command itself
+case $(awk '{print $1; exit}' <<<"$cmd") in
+  agent-wall.sh|ngisa-report) cmd=$(perl -0pe "s/'[^']*'//gs; s/\"[^\"]*\"//gs" <<<"$cmd");;
+esac
 dirs=${NGISA_CODE_DIRS:-lib test integration_test android ios}   # repo-tab exports the dirs from the repo's deny list
 block() { echo "NGISA must not do this itself ($1). Spawn an implementer: agent-wall.sh <slug> implementer sonnet \"<task>\"." >&2; exit 2; }
 # a test runner called directly (ci_local.sh after a merge is allowed)
@@ -1500,8 +1635,8 @@ case $url in
 esac
 EOF
 
-chmod +x ~/bin/ngisa-guard ~/bin/real-init ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/agent-view ~/bin/ngisa-statusline ~/bin/worktree-include ~/bin/caveman-ultra-hook ~/bin/agent-pr ~/bin/gate-check ~/bin/ngisa-report
-which real-init ngisa-guard make-lab repo-tab agent-wall.sh agent-view ngisa-statusline worktree-include agent-pr caveman-ultra-hook gate-check ngisa-report      # all twelve must print a path
+chmod +x ~/bin/agent-tail ~/bin/ngisa-guard ~/bin/real-init ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/agent-view ~/bin/ngisa-statusline ~/bin/worktree-include ~/bin/caveman-ultra-hook ~/bin/agent-pr ~/bin/gate-check ~/bin/ngisa-report
+which agent-tail real-init ngisa-guard make-lab repo-tab agent-wall.sh agent-view ngisa-statusline worktree-include agent-pr caveman-ultra-hook gate-check ngisa-report      # all thirteen must print a path
 ```
 
 (macOS ships bash 3.2, so `agent-wall.sh` here avoids `mapfile` and negative array indexes.)
@@ -1569,7 +1704,7 @@ In the NGISA tab, type something tiny with 2 independent parts, e.g.:
 > Add a `toString()` to `OcrResult` and a unit test for `BoundsSerializer` edge cases. Brainstorm, then plan, then wait for me.
 
 Approve the spec, approve the plan, then say `go`. The NGISA answers in caveman ultra (the hook in `settings.local.json`). You should see:
-- 2 panes open on the right of the NGISA, one per agent. They are read-only views (`agent-view`) that show only status: the name, `working`, `needs you` or `done` with the time, one dim line (the branch), and one result line (the commit). A worker that has made no move for 2 minutes gets a dim `quiet for Nm` line; a worker that needs you shows the question and `claude attach <name>`; a red line says so if the NGISA never got the worker's result. There is no input box. `AGENT_VIEW_DETAIL=1` brings back the full view (phase strip, counters, a `now` line and a log). The NGISA's status line adds a `workers` roster (`ngisa-statusline`). To answer a worker that shows `needs you`, run `claude attach <name>` in a spare pane. `AGENT_VIEW=attach` makes `agent-wall.sh` open the full `claude attach` pane instead.
+- 2 panes open on the right of the NGISA, one per agent. Default view is `agent-tail` (since 2026-10-16): a live stream of the worker's messages, tool calls and one-line results, newest at the bottom, with no input box and no status bar, read-only. `AGENT_VIEW=attach` gives the full `claude attach` pane (input box); `AGENT_VIEW=status` gives the older status-only `agent-view`, which shows only status: the name, `working`, `needs you` or `done` with the time, one dim line (the branch), and one result line (the commit). A worker that has made no move for 2 minutes gets a dim `quiet for Nm` line; a worker that needs you shows the question and `claude attach <name>`; a red line says so if the NGISA never got the worker's result. There is no input box. `AGENT_VIEW_DETAIL=1` brings back the full view (phase strip, counters, a `now` line and a log). The NGISA's status line adds a `workers` roster (`ngisa-statusline`). To answer a worker that shows `needs you`, run `claude attach <name>` in a spare pane. `AGENT_VIEW=attach` makes `agent-wall.sh` open the full `claude attach` pane instead.
 - each agent finishes with tests green, then the NGISA says it got a report
 - the NGISA runs `gate-check` on each branch, merges the clean ones into a feature branch, runs `ci_local.sh`, and shows you one table (task | branch | gate-check | tests | unverified items)
 
