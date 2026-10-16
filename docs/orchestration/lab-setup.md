@@ -13,7 +13,6 @@ working unchanged, and deleting the clone removes every trace.
    ├─ .claude/agents/      implementer.md
    ├─ .claude/settings.local.json   block hook + permission allowlist
    ├─ tool/setup.sh        from agent-init (stack detected: Flutter, PHP)
-   ├─ tool/ci_local.sh     from agent-init (the done gate)
    └─ .claude/ngisa-settings.json   from agent-init (NGISA edit deny list)
 ```
 

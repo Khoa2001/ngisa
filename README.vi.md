@@ -6,14 +6,14 @@
 
 NGISA (*NGƯỜI GIÁM SÁT*) là một phiên Claude Code cho mỗi repo: lên plan cho task, giao từng phần cho các worker, kiểm tra gate không bị đụng, rồi dừng ở draft PR để bạn quyết định.
 
-![NGISA lên plan, hai worker làm trong worktree riêng, gate-check qua, bạn merge](docs/assets/ngisa-demo.vi.gif)
+![NGISA lên plan, hai worker làm trong worktree riêng, bạn merge](docs/assets/ngisa-demo.vi.gif)
 
 *Ảnh minh họa, không phải bản ghi thật. Bố cục giống một tab WezTerm thật.*
 
 ## Bạn được gì
 
 - **Song song mà không loạn.** Tối đa 3 worker mỗi repo, mỗi worker có git worktree riêng và một task riêng.
-- **Gate worker không thể làm giả.** Mỗi worker chạy `tool/setup.sh` của chính repo và phải qua `tool/ci_local.sh`. `gate-check` (một script) kiểm tra file gate và cấu hình lint không bị sửa. Repo Flutter, Composer PHP và PHP thuần được tạo sẵn gate.
+- **Kiểm tra thuộc về repo.** Mỗi worker chạy `tool/setup.sh` của chính repo, rồi các lệnh format, analyze, test mà `CLAUDE.md` của repo nêu, và báo đã chạy gì. Không có script gate: bạn đọc diff. Repo Flutter, Composer PHP và PHP thuần được tạo sẵn `tool/setup.sh`.
 - **Bạn nắm quyền.** Bạn duyệt plan và đọc diff. Worker không push được. Chỉ bạn merge vào `main`.
 
 ## Dùng thử
@@ -57,4 +57,4 @@ Xem bước 5 của [`lab-quickstart.md`](docs/orchestration/lab-quickstart.md).
 
 ## Trạng thái
 
-Thử nghiệm. Mỗi lần chạy được ghi lại (thời gian, can thiệp, gate-check FAIL, chi phí) trong [`docs/runs/`](docs/runs/) làm dữ liệu nghiên cứu, thuộc dự án "hand-off": một hệ agent có giao được phần mềm chất lượng production từ một spec không, và con người phải ở đâu trong vòng lặp?
+Thử nghiệm. Mỗi lần chạy được ghi lại (thời gian, can thiệp, kiểm tra đỏ, chi phí) trong [`docs/runs/`](docs/runs/) làm dữ liệu nghiên cứu, thuộc dự án "hand-off": một hệ agent có giao được phần mềm chất lượng production từ một spec không, và con người phải ở đâu trong vòng lặp?

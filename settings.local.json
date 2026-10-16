@@ -6,14 +6,13 @@
       "Bash(composer install:*)", "Bash(composer run-script:*)", "Bash(vendor/bin/phpunit:*)",
       "Bash(vendor/bin/pint:*)", "Bash(vendor/bin/phpstan:*)",
       "Bash(php -l:*)", "Bash(php tests/:*)", "Bash(diff:*)",
-      "Bash(./tool/setup.sh)", "Bash(./tool/ci_local.sh)", "Bash(./tool/ci_local.sh test/*)", "Bash(./tool/ci_local.sh tests/*)",
+      "Bash(./tool/setup.sh)",
       "Bash(git status)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)", "Bash(git commit:*)",
-      "Bash(git merge:*)", "Bash(git checkout:*)", "Bash(agent-wall.sh:*)", "Bash(worktree-include)", "Bash(gate-check:*)", "Bash(ngisa-report:*)"
+      "Bash(git merge:*)", "Bash(git checkout:*)", "Bash(agent-wall.sh:*)", "Bash(worktree-include)", "Bash(ngisa-report:*)"
     ],
     "deny": [
       "Bash(git push:*)", "Bash(flutter pub publish:*)", "Bash(dart pub publish:*)",
-      "Bash(fastlane:*)", "Bash(firebase deploy:*)",
-      "Edit(tool/ci_local.sh)", "Edit(tool/setup.sh)", "Edit(tool/known_failures.txt)"
+      "Bash(fastlane:*)", "Bash(firebase deploy:*)"
     ]
   },
   "hooks": {
