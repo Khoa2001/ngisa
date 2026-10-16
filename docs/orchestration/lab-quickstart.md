@@ -1619,6 +1619,8 @@ done
 # agent-init wants origin/HEAD to pick its base
 git rev-parse -q --verify origin/HEAD >/dev/null || git remote set-head origin -a >/dev/null 2>&1 || true
 agent-init
+# tool/setup.sh and tool/ci_local.sh are untracked here (git-excluded), so each worker worktree needs them copied in: list them
+for f in tool/setup.sh tool/ci_local.sh; do grep -qxF "$f" .worktreeinclude || printf '%s\n' "$f" >> .worktreeinclude; done
 # the only push path is agent-pr, which pushes to `upstream`: an alias of origin
 git remote get-url upstream >/dev/null 2>&1 || git remote add upstream "$origin"
 echo "real repo ready: repo-tab $PWD"
