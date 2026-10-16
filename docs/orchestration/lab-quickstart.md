@@ -58,6 +58,7 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
 1. Size the task first (see Size below). Big tasks: spec → plan with superpowers (brainstorming, writing-plans). STOP and wait for my approval of the plan.
 2. Split the approved plan into tasks. Each task lists the exact paths it may touch, the stack (e.g. flutter, php)
    and the test command, and that text goes into the worker's prompt. A repo can mix stacks: name the stack per task.
+   The test command is always `./tool/ci_local.sh <test paths>` (the repo's own script picks the runner). Never write a raw runner (`flutter test`, `phpunit`, ...) in a task text.
    Two tasks that touch the same file are NOT parallel; chain them.
 3. Spawn each parallel task with `agent-wall.sh <task-slug> implementer sonnet "<task text>"`.
    Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
