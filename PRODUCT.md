@@ -16,7 +16,7 @@ NGISA is a kit that lets one orchestrator session per repo run implementer worke
 The developer watches workers without being able to disturb them: worker panes are read-only views, answers go through `claude attach <name>`. One NGISA per repo, workers listed in its status line.
 
 ## Operating Context
-- Surfaces: the worker pane (`agent-view`), the NGISA status line with the `workers` roster (`ngisa-statusline`), and the pane layout (`agent-wall.sh`). The GitHub Pages site and README are documentation, not the product.
+- Surfaces: the worker pane (`agent-view`), the NGISA status line with the `workers` roster (`ngisa-statusline`), the report board (`ngisa-report view`, a strip under the NGISA pane), and the pane layout (`agent-wall.sh`). The GitHub Pages site and README are documentation, not the product.
 - Panes live in WezTerm; width can be narrow (80 columns) or wide. The pane runs for the whole length of a worker and refreshes about every 2 seconds.
 - Data comes from the worker transcript under `~/.claude/projects` (an internal format, read only), `git`, and `claude agents --json`. Phases and gate results are best-effort guesses; the plain feed is always shown.
 

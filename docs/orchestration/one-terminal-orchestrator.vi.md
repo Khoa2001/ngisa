@@ -92,7 +92,13 @@ The task text gives the paths you may touch, the stack and the test command. Any
 2. TDD: write the failing test, show it red, make it green. Use the task's test command, else the one in CLAUDE.md or `tool/ci_local.sh`.
 3. `./tool/ci_local.sh` must exit 0 before you stop. Never edit `tool/ci_local.sh`, `tool/setup.sh` or `tool/known_failures.txt`, and never run `--record-baseline`. `./tool/ci_local.sh <test paths>` runs just those tests for quick checks; the full gate must still exit 0 before you stop. A test listed in `tool/known_failures.txt` was already failing before you; leave it. Never skip, delete or loosen tests, lint rules or analyzer config to get green. If setup or the gate cannot run, or fails for a reason outside your task, stop and report the exact error. A red gate in the report is fine; a faked green is not.
 4. Commit on your branch. Never push, never merge, never touch main.
-5. Final message, exactly: branch name, files changed, test command + result, anything you could NOT verify and why. Write it in caveman ultra (no articles or filler, fragments OK); branch, paths, commands and errors stay exact.
+5. Final message: exactly these six lines, nothing before or after, in caveman ultra (no articles or filler, fragments OK); branch, paths, commands and errors stay exact.
+   branch: <branch name>
+   files: <paths changed, comma separated>
+   gate: <./tool/ci_local.sh exit code and test count, or the exact error>
+   scope: in paths | outside: <paths>
+   unverified: <what you could NOT verify and why, or none>
+   asks: <decisions you deferred, each with your recommendation, separated by ";", or none>
 Do not edit files outside the task's listed paths. If you must, stop and say so.
 ```
 
@@ -115,14 +121,20 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    Two tasks that touch the same file are NOT parallel; chain them.
 3. Spawn each parallel task with `agent-wall.sh <task-slug> implementer sonnet "<task text>"`.
    Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
+   Before the first spawn of a new plan run `ngisa-report clear`. After each spawn, and after each relay that sends a worker back to work, run `ngisa-report set <slug> --state working`.
    If you create a worker's worktree yourself with `git worktree add`, git skips `.worktreeinclude`: tell the worker in its task text
    to run `worktree-include` before anything else, so it gets `tool/setup.sh` and `tool/ci_local.sh`.
 4. When a worker's report arrives, run `gate-check <branch> <base branch>` (branch from the report; base is the branch the plan was cut from).
-   Exit 0: go on. Exit 1 (findings) or 2 (error, e.g. wrong branch name): stop, show me its output, do not merge that branch until I decide. It only compares the gate files and the
+   Exit 0: go on. Exit 1 (findings) or 2 (error, e.g. wrong branch name): stop, do not merge that branch until I decide. Exit 1: record the row as `fail` with each finding line as `--finding`, then send me `ngisa-report ask <slug>` (no worker ask: it gives the default `merge anyway?`). Exit 2: show me the error. It only compares the gate files and the
    lint/analyzer/CI config; I read the diff myself, so do not add your own review.
+   Then record the row: `ngisa-report set <slug> --base <base branch> --branch <branch> --state ok|fail|blocked --gate '<gate line>' --tests '<n pass>' --diff <files> <added> <removed>`
+   plus `--finding '<text>'` per gate-check finding, `--ask '<text>|<why>|<rec>'` per item in the worker's `asks:` (leave `<why>` empty when the worker gave none: never invent one), `--unverified '<text>'` per item in its `unverified:`.
+   `fail` when gate-check exited 1 or the gate was red, `blocked` when it waits on me, else `ok`; a worker still running is `--state working`.
+   Diff counts: `git diff --shortstat <base>...<branch>`. Always single-quote text values (worker and gate-check text holds `$` and backticks); a `'` inside text becomes `'\''`.
 5. Only one agent runs integration tests / the emulator at a time.
 6. Merge task branches that passed the latest gate-check (or that I allowed) into the feature branch locally, run ./tool/ci_local.sh, push the feature branch, open a DRAFT PR.
-7. Report to me: one table (task | branch | gate-check | tests | unverified items), plus the PR link.
+7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board), then the PR link if any. Never retype or reword it: the report pane shows the same data.
+Ask: when you need a decision, run `ngisa-report ask <slug>` and send only its output, one ask per message, then wait. Never put an ask in prose.
 Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
   Spawn ONE implementer with exactly those paths, then run gate-check as usual. Anything bigger: say it needs a plan.
 Relay: when I ask for something extra from a worker (e.g. "have it carve", "fix the lint"), SendMessage it to
@@ -134,6 +146,7 @@ Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, q
   Not: "I have started the implementer worker. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Gate-check next."
   Long text too (findings, decisions): numbered fragments, never prose paragraphs.
   Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."
+  Boards and asks are templates: paste them, do not rewrite them.
 Never: merge to main, force-push, publish, touch store/remote-config/signing, delete branches with unmerged work.
 ```
 
@@ -147,6 +160,7 @@ Trong `~/.claude/settings.json`, thêm vào hook format + Stop gate của playbo
 - **Không** cho phép rộng `Bash(wezterm cli:*)`. Chỉ đi qua `agent-wall.sh` để layout không bị loạn.
 - NGISA và báo cáo của worker nói kiểu caveman ultra nhờ hook `SessionStart` + `UserPromptSubmit` chạy `caveman-ultra-hook` (chỉ thêm context, không chặn gì), cộng với cùng luật đó trong system prompt của NGISA (`repo-tab` truyền `--append-system-prompt`), vì một dòng nhắc thôi không đủ với Opus. Code, commit, PR vẫn viết bình thường. Bản luật cho lab, đi PR qua `agent-pr`, nằm trong `lab-quickstart.md`.
 - **Không** chạy NGISA hay agent ở `bypassPermissions`: ở chế độ đó, báo cáo từ session khác bị giữ lại chờ duyệt, không tự đến NGISA.
+- Báo cáo và câu hỏi của NGISA là mẫu cố định, không phải văn xuôi. NGISA ghi mỗi báo cáo của worker bằng `ngisa-report set` (khối script trong `lab-quickstart.md`) rồi dán nguyên output làm báo cáo cuối: mỗi task một dòng có ký hiệu trạng thái, phát hiện (`!`) và câu hỏi (`?`, kèm đề xuất) nằm ngay dưới dòng task, mục chưa kiểm chứng và chú giải (`✓ ok  ✗ fail  ▶ working  ? asks you  ! finding`). `agent-wall.sh` mở `ngisa-report view` một lần thành dải ngắn dưới pane NGISA: cùng board đó nhưng có màu (xanh ngọc đang chạy, hổ phách cần bạn, xanh lá xong, đỏ lỗi), chỉ đọc, không tính vào 3 slot worker. Quyết định đến dưới dạng `ngisa-report ask <slug>`: phát hiện, vì sao quan trọng, `y · n · d diff` và đề xuất. Tin nhắn cuối của implementer là sáu dòng cố định (`branch / files / gate / scope / unverified / asks`) để NGISA ánh xạ sang các cờ và thiếu dòng nào thì thấy ngay.
 
 ## 3. WezTerm: một cửa sổ, mỗi tab một repo
 
@@ -229,7 +243,7 @@ repo-tab ~/code/my_app        # tab này thành NGISA của repo (tab mới nế
 > writing-plans …             → plan + file mỗi task. Bạn duyệt.    # CỔNG 2: plan
 > "execute the plan per Orchestrating rules"
    → implementer chạy nền trong worktree, gate-check chạy trên từng cái
-   → bạn nhận 1 bảng + link draft PR
+   → bạn nhận 1 board (`ngisa-report`) + link draft PR
 # CI xanh + gate-check sạch hết → bạn xem tóm tắt PR + golden diff  # CỔNG 3
 # Bạn merge.                                                          # CỔNG 4: không đảo ngược
 ```
