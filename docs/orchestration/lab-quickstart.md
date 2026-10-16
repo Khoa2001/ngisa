@@ -77,11 +77,12 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
 5. Only one agent runs integration tests / the emulator at a time.
 6. Merge task branches that passed the latest gate-check (or that I allowed) into a local feature branch and run ./tool/ci_local.sh. Never push on your own.
    Do the merge in its own worktree (`git worktree add .claude/worktrees/integration -b <feature branch>`). Never check out or merge in the main checkout: it may hold my uncommitted work.
-7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board), then the PR link if any. Never retype or reword it.
+7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board of cards), then the PR link if any. Never retype or reword it.
+   When any task has an ask (a worker ask or a red gate), send ONLY `ngisa-report ask <slug>` for it, not the board: the card already carries the state, and the same task must never appear twice in one message.
 Quiet: my screen is for decisions, not a log. While workers run, say ONE line per event (spawn: `<slug> spawned. Gate-check next.`).
   No board until a worker reports, no session ids or `claude attach` hints (the worker pane shows its work), and never mention
   hook blocks, retries or workarounds: fix them silently. Only asks, the board after a report, and the PR link get more than one line.
-Ask: when you need a decision, run `ngisa-report ask <slug>` and send only its output, one ask per message, then wait. Never put an ask in prose.
+Ask: when you need a decision, run `ngisa-report ask <slug>` and send only its output (no board next to it), one ask per message, then wait. Never put an ask in prose.
 Size: judge every task and say it in one line (`tiny`, `small` or `big`, and why). "quick" from me means tiny.
   tiny = clear, 1-2 named files or one obvious bug: no brainstorming, no plan. One worker, `mode: direct`, exactly those paths.
   small = a few files, one concern: a 3-5 line plan in chat, wait for my OK, then `mode: direct` worker(s).
@@ -1284,22 +1285,21 @@ EOF
 
 cat > ~/bin/ngisa-report <<'EOF'
 #!/usr/bin/env python3
-"""Report board for the NGISA: one row per worker task, asks and findings inline, as plain text for the chat.
+"""Report board for the NGISA: one framed card per worker task (findings, asks, unverified count), as plain text for the chat.
 
   ngisa-report set <slug> --state ok|fail|working|blocked [--base B] [--branch X] [--gate G] [--tests T]
                   [--diff FILES ADD DEL] [--finding F]... [--ask "text|why|rec"]... [--unverified U]...
       replace the row for <slug>, then print the board (paste it into chat unchanged)
       an ask is refused (exit 2, nothing saved) when text > 60, why > 80 or rec > 24 characters
   ngisa-report show             print the board
-  ngisa-report ask <slug>       print the ask block for each ask of <slug> (a red gate with no ask gets "merge anyway?")
+  ngisa-report ask <slug>       print the full card of <slug> (why, y/n/diff, rec, every unverified item) (a red gate with no ask gets "merge anyway?")
   ngisa-report clear            delete this repo's report
 
 One report per repo: ~/.cache/ngisa/report/ngisa-<repo>.json (XDG_CACHE_HOME respected). Python 3 standard library only.
 """
-import argparse, json, os, subprocess, sys, tempfile, time
+import argparse, json, os, subprocess, sys, tempfile, textwrap, time
 
 STATES = {"ok": "✓", "fail": "✗", "working": "▶", "blocked": "?"}
-LEGEND = "✓ ok  ✗ fail  ▶ working  ? asks you  ! finding"
 ASK_LIMITS = {"text": 60, "why": 80, "rec": 24}
 
 
@@ -1345,7 +1345,64 @@ def detail(t):
 
 def diff_text(t):
     d = t.get("diff")
-    return f"+{d['add']} −{d['del']}" if d else ""
+    return f"{d['files']} files +{d['add']} −{d['del']}" if d else ""
+
+
+WIDTH = int(os.environ.get("NGISA_REPORT_WIDTH", "64"))
+LABEL = {"ok": "✓ ok", "fail": "✗ fail", "working": "▶ working", "blocked": "? needs you"}
+
+
+def fit(text, n):
+    text = str(text)
+    lead = text[: len(text) - len(text.lstrip())]
+    text = lead + " ".join(text.split())
+    return text if len(text) <= n else text[: n - 1] + "…"
+
+
+def wrap(text, prefix="", cont="  "):
+    """At most two lines of the card width, the second one cut with an ellipsis."""
+    n = WIDTH - 4
+    lines = textwrap.wrap(" ".join(str(text).split()), n - len(prefix), max_lines=2, placeholder="…") or [""]
+    return [prefix + lines[0]] + [cont + l for l in lines[1:]]
+
+
+def card(t, rows):
+    """One framed card: the slug on the left of the top edge, the state on the right. Every row is cut to one line."""
+    inner = WIDTH - 4
+    state = " " + LABEL.get(t.get("state"), "·") + " "
+    name = " " + fit(t["slug"], WIDTH - len(state) - 8) + " "
+    fill = WIDTH - 4 - len(name) - len(state)
+    top = "╔═" + name + "═" * max(fill, 1) + state + "═╗"
+    body = [f"║ {fit(r, inner).ljust(inner)} ║" for r in rows]
+    return [top] + body + ["╚" + "═" * (WIDTH - 2) + "╝"]
+
+
+def task_rows(t, full):
+    inner = WIDTH - 4
+    rows = []
+    if t.get("branch"):
+        rows.append(t["branch"])
+    meta = " · ".join(x for x in (diff_text(t), detail(t)) if x)
+    if meta:
+        rows += wrap(meta)
+    for f in t.get("findings", []):
+        rows += wrap(f, "! ")
+    for a in t.get("asks", []):
+        if full:
+            if a.get("why"):
+                rows += wrap(a["why"], "why: ")
+            rows += wrap(a["text"], "? ")
+            rows.append("y · n · d diff" + (f" · rec {a['rec']}" if a.get("rec") else ""))
+        else:
+            rec = f" (rec {a['rec']})" if a.get("rec") else ""
+            rows.append(f"? {fit(a['text'], inner - 2 - len(rec))}{rec}")
+    un = t.get("unverified", [])
+    if full:
+        for u in un:
+            rows += wrap(u, "· unverified: ", "    ")
+    elif un:
+        rows.append(f"{len(un)} unverified")
+    return rows
 
 
 def board(data):
@@ -1356,32 +1413,13 @@ def board(data):
     lines = [head.rstrip()]
     if not tasks:
         return lines + [" no tasks yet"]
-    sw = max(len(t["slug"]) for t in tasks)
-    bw = max(len(t.get("branch", "")) for t in tasks)
     for t in tasks:
-        row = f" {STATES.get(t.get('state'), '·')} {t['slug'].ljust(sw)}  {t.get('branch', '').ljust(bw)}"
-        if detail(t):
-            row += "  " + detail(t)
-        if diff_text(t):
-            row += "  " + diff_text(t)
-        lines.append(row.rstrip())
-        lines += [f"     ! {f}" for f in t.get("findings", [])]
-        for a in t.get("asks", []):
-            lines.append(f"     ? {a['text']}" + (f" [rec {a['rec']}]" if a.get("rec") else ""))
-    lines.append("")
-    lines += [f" unverified: {t['slug']} {u}" for t in tasks for u in t.get("unverified", [])]
-    lines.append(" " + LEGEND)
+        lines += card(t, task_rows(t, False))
     return lines
 
 
 def ask_block(t):
-    out = [f"{STATES.get(t.get('state'), '·')} {t['slug']}  {detail(t)}".rstrip()]
-    out += [f"  ! {f}" for f in t.get("findings", [])]
-    for a in t.get("asks", []):
-        if a.get("why"):
-            out.append(f"  why: {a['why']}")
-        out.append(f"  ? {a['text']}   y · n · d diff" + (f"   rec {a['rec']}" if a.get("rec") else ""))
-    return out
+    return card(t, task_rows(t, True))
 
 
 def parse_ask(raw):
