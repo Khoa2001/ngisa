@@ -23,3 +23,15 @@ Goal: make the NGISA's final report and decision asks fast to scan, show them in
 - A real WezTerm tab: the strip under the NGISA pane, live refresh, equal worker heights after the strip opens, the strip when all workers were closed before a new one.
 - A whole task with three real workers and the new J report; whether Sonnet keeps to the six lines.
 - Whether the NGISA keeps pasting the board unchanged over a long session (count drift in the next real run).
+
+## Follow-up: report pane removed (2026-10-16)
+- First real run on busy-bees (two test tasks): the strip under the NGISA pane duplicated the chat board and the statusline roster, took height from the NGISA pane, and the screen looked messy. The ask in chat and on the board was a paragraph (text, why and rec were full sentences) that wrapped across the pane. The user chose to remove the strip completely, keep the board in chat, and refuse long asks.
+- Removed: `ngisa-report view`, `fit_rows`, all colour and width code, and the report strip in `agent-wall.sh` (it is byte-identical to the version before this feature). Rules that existed only for the strip are gone (`set --state working` after each spawn).
+- Added: `ngisa-report set` exits 2 and saves nothing when an ask has text over 60, why over 80 or rec over 24 characters; the message says `shorten it`. The rule text in `orchestrating.md` names the limits.
+- tweakcc: not caused by this change. Claude Code auto-updated to 2.1.301 at 07:46; `~/.tweakcc/config.json` records 2.1.300 and the 2.1.301 binary has no tweakcc marker. The user re-applies tweakcc; setting `DISABLE_AUTOUPDATER=1` would stop it recurring.
+
+### Checked
+- `test_ngisa_report.py`: 13 tests, watched failing first, then passing (board mock, ask block, default ask for a red gate, long asks refused with nothing saved, corrupt file, two repos, show and clear, `view` gone). `agent-wall.sh` fake-`wezterm` run: 3 workers, 4th refused, exactly 3 `split-pane` calls, no report pane. Quickstart blocks equal the files (6 of 6).
+
+### Not tested
+- A real NGISA run with the limits: whether Opus shortens a refused ask on retry instead of falling back to prose. An NGISA tab opened before this change still has the old strip pane alive; it is counted as a worker pane until the tab is closed.

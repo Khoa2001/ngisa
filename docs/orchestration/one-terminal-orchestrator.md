@@ -135,15 +135,15 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    and the test command, and that text goes into the worker's prompt. A repo can mix stacks: name the stack per task.
    Two tasks that touch the same file are NOT parallel; chain them.
 3. Dispatch parallel tasks to `implementer` (max 3 at once). Chain dependent ones.
-   Before the first spawn of a new plan run `ngisa-report clear`. After each spawn, and after each relay that sends a worker back to work, run `ngisa-report set <slug> --state working`.
+   Before the first spawn of a new plan run `ngisa-report clear`.
 4. For each finished task, run `gate-check <branch> <base branch>`. Exit 1: stop, do not merge that branch until I decide: record the row as `fail` with each finding line as `--finding`, then send me `ngisa-report ask <slug>` (no worker ask: it gives the default `merge anyway?`). Exit 0: go on. It only compares the gate files and the lint/analyzer/CI config; I read the diff myself, so do not add your own review.
    Then record the row: `ngisa-report set <slug> --base <base branch> --branch <branch> --state ok|fail|blocked --gate '<gate line>' --tests '<n pass>' --diff <files> <added> <removed>`
-   plus `--finding '<text>'` per gate-check finding, `--ask '<text>|<why>|<rec>'` per item in the worker's `asks:` (leave `<why>` empty when the worker gave none: never invent one), `--unverified '<text>'` per item in its `unverified:`.
+   plus `--finding '<text>'` per gate-check finding, `--ask '<text>|<why>|<rec>'` per item in the worker's `asks:` (leave `<why>` empty when the worker gave none: never invent one; text max 60, why max 80, rec max 24 characters, `set` refuses longer: shorten, do not paste sentences), `--unverified '<text>'` per item in its `unverified:`.
    `fail` when gate-check exited 1 or the gate was red, `blocked` when it waits on me, else `ok`; a worker still running is `--state working`.
    Diff counts: `git diff --shortstat <base>...<branch>`. Always single-quote text values (worker and gate-check text holds `$` and backticks); a `'` inside text becomes `'\''`.
 5. Only one agent runs integration tests / the emulator at a time.
 6. Merge task branches that passed the latest gate-check (or that I allowed) into the feature branch locally, run ./tool/ci_local.sh, push the feature branch, open a DRAFT PR.
-7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board), then the PR link if any. Never retype or reword it: the report pane shows the same data.
+7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board), then the PR link if any. Never retype or reword it.
 Ask: when you need a decision, run `ngisa-report ask <slug>` and send only its output, one ask per message, then wait. Never put an ask in prose.
 Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
   Spawn ONE implementer with exactly those paths, then run gate-check as usual. Anything bigger: say it needs a plan.
@@ -288,14 +288,14 @@ Notes:
 ```md
 3. Spawn each parallel task with `agent-wall.sh <task-slug> implementer sonnet "<task text>"`.
    Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
-   Before the first spawn of a new plan run `ngisa-report clear`. After each spawn, and after each relay that sends a worker back to work, run `ngisa-report set <slug> --state working`.
+   Before the first spawn of a new plan run `ngisa-report clear`.
    If you create a worker's worktree yourself with `git worktree add`, git skips `.worktreeinclude`: tell the worker in its task text
    to run `worktree-include` before anything else, so it gets `tool/setup.sh` and `tool/ci_local.sh`.
 4. When a worker's report arrives, run `gate-check <branch> <base branch>` (branch from the report; base is the branch the plan was cut from).
    Exit 0: go on. Exit 1 (findings) or 2 (error, e.g. wrong branch name): stop, do not merge that branch until I decide. Exit 1: record the row as `fail` with each finding line as `--finding`, then send me `ngisa-report ask <slug>` (no worker ask: it gives the default `merge anyway?`). Exit 2: show me the error. It only compares the gate files and the
    lint/analyzer/CI config; I read the diff myself, so do not add your own review.
    Then record the row: `ngisa-report set <slug> --base <base branch> --branch <branch> --state ok|fail|blocked --gate '<gate line>' --tests '<n pass>' --diff <files> <added> <removed>`
-   plus `--finding '<text>'` per gate-check finding, `--ask '<text>|<why>|<rec>'` per item in the worker's `asks:` (leave `<why>` empty when the worker gave none: never invent one), `--unverified '<text>'` per item in its `unverified:`.
+   plus `--finding '<text>'` per gate-check finding, `--ask '<text>|<why>|<rec>'` per item in the worker's `asks:` (leave `<why>` empty when the worker gave none: never invent one; text max 60, why max 80, rec max 24 characters, `set` refuses longer: shorten, do not paste sentences), `--unverified '<text>'` per item in its `unverified:`.
    `fail` when gate-check exited 1 or the gate was red, `blocked` when it waits on me, else `ok`; a worker still running is `--state working`.
    Diff counts: `git diff --shortstat <base>...<branch>`. Always single-quote text values (worker and gate-check text holds `$` and backticks); a `'` inside text becomes `'\''`.
 ```
@@ -304,7 +304,7 @@ Allow exactly `"Bash(agent-wall.sh:*)"` in `~/.claude/settings.json`. Don't allo
 
 Caveman ultra for the NGISA and the workers' reports comes from a `SessionStart` + `UserPromptSubmit` hook that runs `caveman-ultra-hook` (it adds context; nothing is blocked), plus the same rule in the NGISA's system prompt (`repo-tab` passes `--append-system-prompt`), because a one-line reminder alone was not enough for Opus. Code, commits and PR text stay normal. The lab version of these rules, which routes PRs through `agent-pr`, is in `lab-quickstart.md`.
 
-Reports and asks are fixed templates, not free prose. The NGISA records each worker report with `ngisa-report set` (script block in `lab-quickstart.md`) and pastes its output as the final report: one line per task with a state symbol, findings (`!`) and asks (`?`, with a recommendation) inline under their row, unverified items and a legend (`✓ ok  ✗ fail  ▶ working  ? asks you  ! finding`). `agent-wall.sh` opens `ngisa-report view` once as a short strip under the NGISA pane: the same board in colour (teal working, amber needs you, green done, red error), read-only, not counted in the 3 worker slots. A decision comes as `ngisa-report ask <slug>`: the finding, why it matters, `y · n · d diff` and the recommendation. The implementer's final message is six fixed lines (`branch / files / gate / scope / unverified / asks`) so the NGISA can map them to the flags and a missing line shows at once.
+Reports and asks are fixed templates, not free prose. The NGISA records each worker report with `ngisa-report set` (script block in `lab-quickstart.md`) and pastes its output as the final report: one line per task with a state symbol, findings (`!`) and asks (`?`, with a recommendation) inline under their row, unverified items and a legend (`✓ ok  ✗ fail  ▶ working  ? asks you  ! finding`). There is no extra pane for it: the board lives in the chat, next to the `workers` roster in the status line. A decision comes as `ngisa-report ask <slug>`: the finding, why it matters, `y · n · d diff` and the recommendation. `set` refuses an ask longer than 60 characters (why 80, rec 24), so asks stay one line each. The implementer's final message is six fixed lines (`branch / files / gate / scope / unverified / asks`) so the NGISA can map them to the flags and a missing line shows at once.
 
 Don't run NGISA sessions or agents in `bypassPermissions`: in that mode incoming reports from other sessions
 are held for approval instead of delivered.

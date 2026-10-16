@@ -121,19 +121,19 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    Two tasks that touch the same file are NOT parallel; chain them.
 3. Spawn each parallel task with `agent-wall.sh <task-slug> implementer sonnet "<task text>"`.
    Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
-   Before the first spawn of a new plan run `ngisa-report clear`. After each spawn, and after each relay that sends a worker back to work, run `ngisa-report set <slug> --state working`.
+   Before the first spawn of a new plan run `ngisa-report clear`.
    If you create a worker's worktree yourself with `git worktree add`, git skips `.worktreeinclude`: tell the worker in its task text
    to run `worktree-include` before anything else, so it gets `tool/setup.sh` and `tool/ci_local.sh`.
 4. When a worker's report arrives, run `gate-check <branch> <base branch>` (branch from the report; base is the branch the plan was cut from).
    Exit 0: go on. Exit 1 (findings) or 2 (error, e.g. wrong branch name): stop, do not merge that branch until I decide. Exit 1: record the row as `fail` with each finding line as `--finding`, then send me `ngisa-report ask <slug>` (no worker ask: it gives the default `merge anyway?`). Exit 2: show me the error. It only compares the gate files and the
    lint/analyzer/CI config; I read the diff myself, so do not add your own review.
    Then record the row: `ngisa-report set <slug> --base <base branch> --branch <branch> --state ok|fail|blocked --gate '<gate line>' --tests '<n pass>' --diff <files> <added> <removed>`
-   plus `--finding '<text>'` per gate-check finding, `--ask '<text>|<why>|<rec>'` per item in the worker's `asks:` (leave `<why>` empty when the worker gave none: never invent one), `--unverified '<text>'` per item in its `unverified:`.
+   plus `--finding '<text>'` per gate-check finding, `--ask '<text>|<why>|<rec>'` per item in the worker's `asks:` (leave `<why>` empty when the worker gave none: never invent one; text max 60, why max 80, rec max 24 characters, `set` refuses longer: shorten, do not paste sentences), `--unverified '<text>'` per item in its `unverified:`.
    `fail` when gate-check exited 1 or the gate was red, `blocked` when it waits on me, else `ok`; a worker still running is `--state working`.
    Diff counts: `git diff --shortstat <base>...<branch>`. Always single-quote text values (worker and gate-check text holds `$` and backticks); a `'` inside text becomes `'\''`.
 5. Only one agent runs integration tests / the emulator at a time.
 6. Merge task branches that passed the latest gate-check (or that I allowed) into the feature branch locally, run ./tool/ci_local.sh, push the feature branch, open a DRAFT PR.
-7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board), then the PR link if any. Never retype or reword it: the report pane shows the same data.
+7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board), then the PR link if any. Never retype or reword it.
 Ask: when you need a decision, run `ngisa-report ask <slug>` and send only its output, one ask per message, then wait. Never put an ask in prose.
 Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
   Spawn ONE implementer with exactly those paths, then run gate-check as usual. Anything bigger: say it needs a plan.
@@ -160,7 +160,7 @@ Trong `~/.claude/settings.json`, thêm vào hook format + Stop gate của playbo
 - **Không** cho phép rộng `Bash(wezterm cli:*)`. Chỉ đi qua `agent-wall.sh` để layout không bị loạn.
 - NGISA và báo cáo của worker nói kiểu caveman ultra nhờ hook `SessionStart` + `UserPromptSubmit` chạy `caveman-ultra-hook` (chỉ thêm context, không chặn gì), cộng với cùng luật đó trong system prompt của NGISA (`repo-tab` truyền `--append-system-prompt`), vì một dòng nhắc thôi không đủ với Opus. Code, commit, PR vẫn viết bình thường. Bản luật cho lab, đi PR qua `agent-pr`, nằm trong `lab-quickstart.md`.
 - **Không** chạy NGISA hay agent ở `bypassPermissions`: ở chế độ đó, báo cáo từ session khác bị giữ lại chờ duyệt, không tự đến NGISA.
-- Báo cáo và câu hỏi của NGISA là mẫu cố định, không phải văn xuôi. NGISA ghi mỗi báo cáo của worker bằng `ngisa-report set` (khối script trong `lab-quickstart.md`) rồi dán nguyên output làm báo cáo cuối: mỗi task một dòng có ký hiệu trạng thái, phát hiện (`!`) và câu hỏi (`?`, kèm đề xuất) nằm ngay dưới dòng task, mục chưa kiểm chứng và chú giải (`✓ ok  ✗ fail  ▶ working  ? asks you  ! finding`). `agent-wall.sh` mở `ngisa-report view` một lần thành dải ngắn dưới pane NGISA: cùng board đó nhưng có màu (xanh ngọc đang chạy, hổ phách cần bạn, xanh lá xong, đỏ lỗi), chỉ đọc, không tính vào 3 slot worker. Quyết định đến dưới dạng `ngisa-report ask <slug>`: phát hiện, vì sao quan trọng, `y · n · d diff` và đề xuất. Tin nhắn cuối của implementer là sáu dòng cố định (`branch / files / gate / scope / unverified / asks`) để NGISA ánh xạ sang các cờ và thiếu dòng nào thì thấy ngay.
+- Báo cáo và câu hỏi của NGISA là mẫu cố định, không phải văn xuôi. NGISA ghi mỗi báo cáo của worker bằng `ngisa-report set` (khối script trong `lab-quickstart.md`) rồi dán nguyên output làm báo cáo cuối: mỗi task một dòng có ký hiệu trạng thái, phát hiện (`!`) và câu hỏi (`?`, kèm đề xuất) nằm ngay dưới dòng task, mục chưa kiểm chứng và chú giải (`✓ ok  ✗ fail  ▶ working  ? asks you  ! finding`). Không có pane riêng cho nó: board nằm trong chat, cạnh danh sách `workers` ở status line. Quyết định đến dưới dạng `ngisa-report ask <slug>`: phát hiện, vì sao quan trọng, `y · n · d diff` và đề xuất. `set` từ chối câu hỏi dài quá 60 ký tự (why 80, rec 24) nên mỗi câu hỏi chỉ một dòng. Tin nhắn cuối của implementer là sáu dòng cố định (`branch / files / gate / scope / unverified / asks`) để NGISA ánh xạ sang các cờ và thiếu dòng nào thì thấy ngay.
 
 ## 3. WezTerm: một cửa sổ, mỗi tab một repo
 

@@ -79,10 +79,11 @@ Hypotheses to test:
 
 ### Report output (2026-10-16)
 - Why: the NGISA's final report was free text, hard to scan and decide on, and its caveman style slipped on long text (findings, decisions) twice, see `docs/runs/2026-10-15-pane-view-and-caveman.md`. Prose rules did not hold, so structure replaces them.
-- Final report is the glyph board (one line per task, findings `!` and asks `?` inline, unverified items, legend). It is produced by `ngisa-report set` and pasted unchanged, so chat and the coloured report pane (`ngisa-report view`, a strip under the NGISA pane opened by `agent-wall.sh`, outside the 3 worker slots) share one source: `~/.cache/ngisa/report/ngisa-<repo>.json`.
-- Asks come as `ngisa-report ask <slug>`: finding, why, `y · n · d diff`, rec. One ask per message.
+- Final report is the glyph board (one line per task, findings `!` and asks `?` inline, unverified items, legend). It is produced by `ngisa-report set` and pasted unchanged into the chat. JSON per repo: `~/.cache/ngisa/report/ngisa-<repo>.json`.
+- A coloured report pane under the NGISA pane was built first and removed the same day: on a real run it duplicated the chat board and the statusline roster, took height from the NGISA pane, and made the screen messy. `ngisa-report view`, the colour code and the `agent-wall.sh` strip are gone; `agent-wall.sh` is back to workers only.
+- Asks come as `ngisa-report ask <slug>`: finding, why, `y · n · d diff`, rec. One ask per message. `set` refuses an ask with text over 60, why over 80 or rec over 24 characters (a real run produced paragraph-long asks that wrapped across the pane).
 - Implementer final message is six fixed lines: `branch / files / gate / scope / unverified / asks`. The NGISA maps them to the `ngisa-report set` flags.
-- Not chosen: a post-check hook that rewrites drifting NGISA text (latency, misfires on code and quoted errors); a pane that parses the NGISA transcript (internal format).
+- Not chosen: a post-check hook that rewrites drifting NGISA text (latency, misfires on code and quoted errors); a pane that parses the NGISA transcript (internal format); a coloured report pane (see above).
 
 ### Max plan limits
 - Every agent draws on the same 5-hour and weekly quota. Keep it to 3 agents per tab and about 4 or 5 running across all repos.
@@ -126,7 +127,6 @@ If the kit and the docs disagree, the newest doc wins. lab-quickstart.md has the
 - Run `agent-pr` for real against a throwaway repo on GitHub and on Gitea. Only the dry run and the guards were tested.
 - Check that Opus and Sonnet follow the caveman hook, and that worktree sessions load the hook (they use the project settings of the main clone).
 - Fix the worktree branch naming mismatch.
-- Exercise the report pane in a real WezTerm tab: placement under the NGISA pane, live refresh, reopening after all workers closed.
 - Move the kit into `~/.claude` once lab runs are trusted.
 
 ## Working preferences
