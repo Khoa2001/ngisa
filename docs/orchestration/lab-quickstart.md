@@ -374,12 +374,13 @@ if (( ${#impl[@]} >= 3 )); then
 fi
 claude --bg --name "$name" --agent "$agent" --model "$model" \
   "$prompt  When finished, send your final report to @ngisa-$repo with SendMessage."
-# worker panes: agent-tail by default (live stream of messages and tool calls, no input box, no status bar, read-only);
-# AGENT_VIEW=attach gives the full claude attach pane with an input box; AGENT_VIEW=status gives the one-line status view
-case ${AGENT_VIEW:-tail} in
-  attach) viewer=(claude attach "$name");;
+# worker panes: `claude attach` by default (the full session view with its input box, so you can watch and type);
+# AGENT_VIEW=tail gives agent-tail (read-only live stream in a frame, no input box);
+# AGENT_VIEW=status gives the one-line status view
+case ${AGENT_VIEW:-attach} in
+  tail) viewer=("$(command -v agent-tail)" "$name");;
   status) viewer=("$(command -v agent-view)" "$name");;
-  *) viewer=("$(command -v agent-tail)" "$name");;
+  *) viewer=(claude attach "$name");;
 esac
 if (( ${#impl[@]} == 0 )); then
   new=$(wezterm cli split-pane --pane-id "$me" --right --percent ${AGENT_WALL_WIDTH:-38} -- "${viewer[@]}")
@@ -1683,7 +1684,7 @@ In the NGISA tab, type something tiny with 2 independent parts, e.g.:
 > Add a `toString()` to `OcrResult` and a unit test for `BoundsSerializer` edge cases. Brainstorm, then plan, then wait for me.
 
 Approve the spec, approve the plan, then say `go`. The NGISA answers in caveman ultra (the hook in `settings.local.json`). You should see:
-- 2 panes open on the right of the NGISA, one per agent. Default view is `agent-tail` (since 2026-10-16): a live stream of the worker's messages (since the 2026-10-16 follow-up: framed by a double-line border with the session name in the top edge, a real diff of each edit with only the changed lines, the last lines of each command's output, and a narrower pane: `AGENT_WALL_WIDTH`, default 38 percent; `AGENT_TAIL_DIFF` and `AGENT_TAIL_OUT` set how many lines show), tool calls and one-line results, newest at the bottom, with no input box and no status bar, read-only. `AGENT_VIEW=attach` gives the full `claude attach` pane (input box); `AGENT_VIEW=status` gives the older status-only `agent-view`, which shows only status: the name, `working`, `needs you` or `done` with the time, one dim line (the branch), and one result line (the commit). A worker that has made no move for 2 minutes gets a dim `quiet for Nm` line; a worker that needs you shows the question and `claude attach <name>`; a red line says so if the NGISA never got the worker's result. There is no input box. `AGENT_VIEW_DETAIL=1` brings back the full view (phase strip, counters, a `now` line and a log). The NGISA's status line adds a `workers` roster (`ngisa-statusline`). To answer a worker that shows `needs you`, run `claude attach <name>` in a spare pane. `AGENT_VIEW=attach` makes `agent-wall.sh` open the full `claude attach` pane instead.
+- 2 panes open on the right of the NGISA, one per agent. Default view is `claude attach` (the full session with its input box; since 2026-10-16 follow-up). `AGENT_VIEW=tail` gives `agent-tail`: a live stream of the worker's messages (since the 2026-10-16 follow-up: framed by a double-line border with the session name in the top edge, a real diff of each edit with only the changed lines, the last lines of each command's output, and a narrower pane: `AGENT_WALL_WIDTH`, default 38 percent; `AGENT_TAIL_DIFF` and `AGENT_TAIL_OUT` set how many lines show), tool calls and one-line results, newest at the bottom, with no input box and no status bar, read-only. `AGENT_VIEW=attach` gives the full `claude attach` pane (input box); `AGENT_VIEW=status` gives the older status-only `agent-view`, which shows only status: the name, `working`, `needs you` or `done` with the time, one dim line (the branch), and one result line (the commit). A worker that has made no move for 2 minutes gets a dim `quiet for Nm` line; a worker that needs you shows the question and `claude attach <name>`; a red line says so if the NGISA never got the worker's result. There is no input box. `AGENT_VIEW_DETAIL=1` brings back the full view (phase strip, counters, a `now` line and a log). The NGISA's status line adds a `workers` roster (`ngisa-statusline`). To answer a worker that shows `needs you`, run `claude attach <name>` in a spare pane. `AGENT_VIEW=attach` makes `agent-wall.sh` open the full `claude attach` pane instead.
 - each agent finishes with tests green, then the NGISA says it got a report
 - the NGISA records each worker report as a card, merges the finished branches into a feature branch, and shows you the cards (task | branch | checks | unverified count)
 
