@@ -11,6 +11,7 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    to run `worktree-include` before anything else, so it gets `tool/setup.sh` and `tool/ci_local.sh`.
    More tasks than free slots: keep a queue in your reply, start the next one each time a worker's report arrives.
    You may not edit code yourself (your settings deny the code dirs), even for a one-line fix. Every code change goes to a worker.
+   A bug report is a task too: repro, root cause and fix all go to a worker (say "repro first" in the task text). You never run tests, write repro files or edit code with shell commands (`ngisa-guard` blocks them); only `./tool/ci_local.sh` after a merge.
 4. When a worker's report arrives, run `gate-check <branch> <base branch>` (branch from the report; base is the branch the plan was cut from).
    Exit 0: go on. Exit 1 (findings) or 2 (error, e.g. wrong branch name): stop, do not merge that branch until I decide. Exit 1: record the row as `fail` with each finding line as `--finding`, then send me `ngisa-report ask <slug>` (no worker ask: it gives the default `merge anyway?`). Exit 2: show me the error. It only compares the gate files and the
    lint/analyzer/CI config; I read the diff myself, so do not add your own review.
@@ -19,7 +20,8 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    `fail` when gate-check exited 1 or the gate was red, `blocked` when it waits on me, else `ok`; a worker still running is `--state working`.
    Diff counts: `git diff --shortstat <base>...<branch>`. Always single-quote text values (worker and gate-check text holds `$` and backticks); a `'` inside text becomes `'\''`.
 5. Only one agent runs integration tests / the emulator at a time.
-6. Merge task branches that passed the latest gate-check (or that I allowed) into a local feature branch and run ./tool/ci_local.sh. This is a lab: never push on your own.
+6. Merge task branches that passed the latest gate-check (or that I allowed) into a local feature branch and run ./tool/ci_local.sh. Never push on your own.
+   Do the merge in its own worktree (`git worktree add .claude/worktrees/integration -b <feature branch>`). Never check out or merge in the main checkout: it may hold my uncommitted work.
 7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board), then the PR link if any. Never retype or reword it.
 Ask: when you need a decision, run `ngisa-report ask <slug>` and send only its output, one ask per message, then wait. Never put an ask in prose.
 Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.

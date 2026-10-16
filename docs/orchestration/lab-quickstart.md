@@ -57,6 +57,7 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    to run `worktree-include` before anything else, so it gets `tool/setup.sh` and `tool/ci_local.sh`.
    More tasks than free slots: keep a queue in your reply, start the next one each time a worker's report arrives.
    You may not edit code yourself (your settings deny the code dirs), even for a one-line fix. Every code change goes to a worker.
+   A bug report is a task too: repro, root cause and fix all go to a worker (say "repro first" in the task text). You never run tests, write repro files or edit code with shell commands (`ngisa-guard` blocks them); only `./tool/ci_local.sh` after a merge.
 4. When a worker's report arrives, run `gate-check <branch> <base branch>` (branch from the report; base is the branch the plan was cut from).
    Exit 0: go on. Exit 1 (findings) or 2 (error, e.g. wrong branch name): stop, do not merge that branch until I decide. Exit 1: record the row as `fail` with each finding line as `--finding`, then send me `ngisa-report ask <slug>` (no worker ask: it gives the default `merge anyway?`). Exit 2: show me the error. It only compares the gate files and the
    lint/analyzer/CI config; I read the diff myself, so do not add your own review.
@@ -65,7 +66,8 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    `fail` when gate-check exited 1 or the gate was red, `blocked` when it waits on me, else `ok`; a worker still running is `--state working`.
    Diff counts: `git diff --shortstat <base>...<branch>`. Always single-quote text values (worker and gate-check text holds `$` and backticks); a `'` inside text becomes `'\''`.
 5. Only one agent runs integration tests / the emulator at a time.
-6. Merge task branches that passed the latest gate-check (or that I allowed) into a local feature branch and run ./tool/ci_local.sh. This is a lab: never push on your own.
+6. Merge task branches that passed the latest gate-check (or that I allowed) into a local feature branch and run ./tool/ci_local.sh. Never push on your own.
+   Do the merge in its own worktree (`git worktree add .claude/worktrees/integration -b <feature branch>`). Never check out or merge in the main checkout: it may hold my uncommitted work.
 7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board), then the PR link if any. Never retype or reword it.
 Ask: when you need a decision, run `ngisa-report ask <slug>` and send only its output, one ask per message, then wait. Never put an ask in prose.
 Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
@@ -139,7 +141,7 @@ cat > ~/bin/agent-init <<'EOF'
 # (tool/setup.sh, tool/ci_local.sh, .worktreeinclude, .claude/ngisa-settings.json, a .gitignore line)
 set -euo pipefail
 mkdir -p tool .claude
-grep -qxF '.claude/worktrees/' .gitignore 2>/dev/null || echo '.claude/worktrees/' >> .gitignore
+git check-ignore -q .claude/worktrees/x 2>/dev/null || grep -qxF '.claude/worktrees/' .gitignore 2>/dev/null || echo '.claude/worktrees/' >> .gitignore
 
 # one "kind:dir" per line. A manifest at the repo root wins; otherwise look one level down.
 stacks=""
@@ -355,11 +357,15 @@ kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/ngisa}
 cfg="$dir/.claude/ngisa-settings.json"; [[ -f $cfg ]] || cfg="$kit/ngisa-settings.json"
 # the caveman rule also goes in the system prompt, where Opus weighs it more than a hook reminder
 style='Caveman ultra applies to EVERY message you write to the user: status updates, spawn notices, summaries, questions, report tables. Drop articles (a/an/the), filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality. Paths, branch names, commands, session ids, quoted errors: exact. Code, commits, PR text, security warnings, irreversible-action confirmations: normal prose. Not: "I have started the implementer worker on this fix. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Gate-check next." Long text too (findings, decisions): numbered fragments, never prose paragraphs. Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes." Reports and asks are templates: paste the output of ngisa-report set (the board) or ngisa-report ask unchanged; do not reword them.'
-# status line: the user's own line, then a roster of this repo's workers (ngisa-statusline). Merged into a temp copy of the settings.
-sl=$(command -v ngisa-statusline || true)
-if [[ -n $sl ]] && jq -e . "$cfg" >/dev/null 2>&1; then
+# status line + guard hook, merged into a temp copy of the settings (NGISA only).
+# ngisa-guard blocks shell edits of the code dirs and direct test runs; it reads the dirs from NGISA_CODE_DIRS.
+sl=$(command -v ngisa-statusline || true); guard=$(command -v ngisa-guard || true)
+if jq -e . "$cfg" >/dev/null 2>&1; then
+  export NGISA_CODE_DIRS=$(jq -r '[.permissions.deny[]? | select(startswith("Edit(")) | sub("^Edit\\(";"") | sub("\\)$";"") | select(test("^[A-Za-z0-9_./-]+/\\*\\*$")) | sub("/\\*\\*$";"")] | join(" ")' "$cfg")
+  export NGISA_CODE_EXT=$(jq -r '[.permissions.deny[]? | select(startswith("Edit(")) | capture("\\*\\.(?<e>[A-Za-z0-9]+)\\)$").e] | unique | join("|")' "$cfg")
   tmpcfg=$(mktemp -t ngisa-settings).json
-  jq --arg c "$sl" '. + {statusLine: {type: "command", command: $c}}' "$cfg" > "$tmpcfg" && cfg=$tmpcfg
+  jq --arg c "$sl" --arg g "$guard" '. + (if $c != "" then {statusLine: {type: "command", command: $c}} else {} end)
+     + (if $g != "" then {hooks: {PreToolUse: [{matcher: "Bash", hooks: [{type: "command", command: $g}]}]}} else {} end)' "$cfg" > "$tmpcfg" && cfg=$tmpcfg
 fi
 args=(--name "ngisa-$name" --model opus --settings "$cfg" --append-system-prompt "$style")
 # run from a tab that is a lone shell pane: become the NGISA right here, so no blank shell tab is left behind.
@@ -1394,14 +1400,89 @@ fi
 jq -n --arg ev "$ev" --arg m "$msg" '{hookSpecificOutput: {hookEventName: $ev, additionalContext: $m}}'
 EOF
 
+cat > ~/bin/ngisa-guard <<'EOF'
+#!/usr/bin/env bash
+# PreToolUse hook for the NGISA only (repo-tab adds it through --settings; workers never load it).
+# Blocks Bash that writes into the code dirs or runs the test suite directly: both belong to an implementer.
+# Best effort on a command string: it stops the usual shell edits, it is not a sandbox.
+set -uo pipefail
+cmd=$(jq -r '.tool_input.command // empty' 2>/dev/null) || exit 0
+[[ -n $cmd ]] || exit 0
+dirs=${NGISA_CODE_DIRS:-lib test integration_test android ios}   # repo-tab exports the dirs from the repo's deny list
+block() { echo "NGISA must not do this itself ($1). Spawn an implementer: agent-wall.sh <slug> implementer sonnet \"<task>\"." >&2; exit 2; }
+# a test runner called directly (ci_local.sh after a merge is allowed)
+if grep -Eq '(^|[;&|(` ]|\$\()[[:space:]]*(fvm[[:space:]]+)?(flutter|dart)[[:space:]]+test([[:space:]]|$)|(^|[;&|(` ])[[:space:]]*(\./)?vendor/bin/phpunit' <<<"$cmd"; then
+  block "runs tests directly"
+fi
+for d in $dirs; do
+  d=${d%/}
+  case $d in ''|*[^A-Za-z0-9_./-]*) continue;; esac   # a glob dir (phpplain **/*.php) is covered by the extension check below
+  p="(^|[^A-Za-z0-9_.-])\.?/?$d/"
+  # redirect into the dir, or a write command that names it
+  if grep -Eq ">>?[[:space:]]*['\"]?\.?/?$d/" <<<"$cmd" \
+     || { grep -Eq "(^|[;&|(\` ])(tee|sed[[:space:]]+(-[A-Za-z]*i|--in-place)|perl[[:space:]]+-[A-Za-z]*i|cp|mv|rm|touch|install|truncate|dd|patch)([[:space:]]|\$)" <<<"$cmd" && grep -Eq "$p" <<<"$cmd"; }; then
+    block "writes into $d/"
+  fi
+done
+if [[ -n ${NGISA_CODE_EXT:-} ]] && grep -Eq ">>?[[:space:]]*['\"]?[^[:space:]]*\.($NGISA_CODE_EXT)\b|(tee|sed[[:space:]]+-[A-Za-z]*i|perl[[:space:]]+-[A-Za-z]*i)[^|;&]*\.($NGISA_CODE_EXT)\b" <<<"$cmd"; then
+  block "writes a .$NGISA_CODE_EXT file"
+fi
+exit 0
+EOF
+
+cat > ~/bin/real-init <<'EOF'
+#!/usr/bin/env bash
+# usage: real-init <repo path>   (once per real repo; safe to re-run)
+# Installs the kit in place, nothing committed: every file goes in .git/info/exclude. Refuses a lab clone.
+set -euo pipefail
+kit=${LAB_KIT:-/Users/khoamai/Projects/my_proj/ngisa}
+[[ -d "$kit/agents" ]] || { echo "no kit at $kit" >&2; exit 1; }
+cd "${1:?usage: real-init <repo path>}"
+git rev-parse --show-toplevel >/dev/null 2>&1 || { echo "not a git repo" >&2; exit 1; }
+cd "$(git rev-parse --show-toplevel)"
+case $PWD in "$HOME"/lab/*) echo "$PWD is a lab clone: use make-lab" >&2; exit 1;; esac
+origin=$(git remote get-url origin 2>/dev/null) || { echo "no origin remote" >&2; exit 1; }
+# orchestrating rules: never overwrite a CLAUDE.local.md that differs
+if [[ -f CLAUDE.local.md ]] && ! cmp -s CLAUDE.local.md "$kit/orchestrating.md"; then
+  if grep -q '^## Orchestrating' CLAUDE.local.md; then cp CLAUDE.local.md CLAUDE.local.md.bak-real-init   # an older copy of the kit file
+  else echo "CLAUDE.local.md exists and is not the kit's. Merge by hand: $kit/orchestrating.md" >&2; exit 1; fi
+fi
+cp "$kit/orchestrating.md" CLAUDE.local.md
+mkdir -p .claude/agents
+cp "$kit"/agents/*.md .claude/agents/
+# settings.local.json: union the kit's allow/deny/hooks into the repo's own file, keep every other key
+f=.claude/settings.local.json
+[[ -f $f ]] || echo '{}' > $f
+cp "$f" "$f.bak-real-init"
+jq --slurpfile k "$kit/settings.local.json" '
+  def u(a; b): ((a // []) + (b // [])) | unique;
+  .permissions.allow = u(.permissions.allow; $k[0].permissions.allow)
+  | .permissions.deny = u(.permissions.deny; $k[0].permissions.deny)
+  | .hooks = ((.hooks // {}) as $h | reduce ($k[0].hooks | to_entries[]) as $e ($h;
+      .[$e.key] = ((.[$e.key] // []) + [$e.value[] | select(. as $x | (($h[$e.key] // []) | index($x)) | not)])))' \
+  "$f.bak-real-init" > "$f"
+# keep it all out of git. Appended once, only what is missing.
+ex=$(git rev-parse --git-path info/exclude); mkdir -p "$(dirname "$ex")"; touch "$ex"
+for p in .claude/agents/ .claude/ngisa-settings.json .claude/worktrees/ .claude/settings.local.json '.claude/*.bak-real-init' CLAUDE.local.md 'CLAUDE.local.md.bak-real-init' .worktreeinclude tool/setup.sh tool/ci_local.sh tool/known_failures.txt; do
+  grep -qxF "$p" "$ex" || printf '%s\n' "$p" >> "$ex"
+done
+# agent-init wants origin/HEAD to pick its base
+git rev-parse -q --verify origin/HEAD >/dev/null || git remote set-head origin -a >/dev/null 2>&1 || true
+agent-init
+# the only push path is agent-pr, which pushes to `upstream`: an alias of origin
+git remote get-url upstream >/dev/null 2>&1 || git remote add upstream "$origin"
+echo "real repo ready: repo-tab $PWD"
+echo "next: review tool/setup.sh, tool/ci_local.sh and .worktreeinclude (secrets). Check: git status shows nothing new."
+EOF
+
 cat > ~/bin/agent-pr <<'EOF'
 #!/usr/bin/env bash
 # usage: agent-pr "<title>" "<body>" [base]
 # Pushes the current branch to the `upstream` remote and opens a DRAFT PR (gh for github.com, tea otherwise).
-# The only push path in a lab; each call needs the user's approval because it is not in any allow list.
+# The only push path in a lab or a real repo; each call needs the user's approval because it is not in any allow list.
 set -euo pipefail
 title=${1:?usage: agent-pr "<title>" "<body>" [base]} body=${2:-}
-git remote get-url upstream >/dev/null 2>&1 || { echo "no 'upstream' remote; make-lab adds it" >&2; exit 1; }
+git remote get-url upstream >/dev/null 2>&1 || { echo "no 'upstream' remote; make-lab or real-init adds it" >&2; exit 1; }
 url=$(git remote get-url upstream)
 branch=$(git rev-parse --abbrev-ref HEAD)
 base=${3:-$(git ls-remote --symref upstream HEAD | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2}')}
@@ -1419,8 +1500,8 @@ case $url in
 esac
 EOF
 
-chmod +x ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/agent-view ~/bin/ngisa-statusline ~/bin/worktree-include ~/bin/caveman-ultra-hook ~/bin/agent-pr ~/bin/gate-check ~/bin/ngisa-report
-which make-lab repo-tab agent-wall.sh agent-view ngisa-statusline worktree-include agent-pr caveman-ultra-hook gate-check ngisa-report      # all ten must print a path
+chmod +x ~/bin/ngisa-guard ~/bin/real-init ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/agent-view ~/bin/ngisa-statusline ~/bin/worktree-include ~/bin/caveman-ultra-hook ~/bin/agent-pr ~/bin/gate-check ~/bin/ngisa-report
+which real-init ngisa-guard make-lab repo-tab agent-wall.sh agent-view ngisa-statusline worktree-include agent-pr caveman-ultra-hook gate-check ngisa-report      # all twelve must print a path
 ```
 
 (macOS ships bash 3.2, so `agent-wall.sh` here avoids `mapfile` and negative array indexes.)
@@ -1436,6 +1517,31 @@ repo-tab ~/lab/vn_citizen_id_scan              # this tab becomes the NGISA (a n
 ```
 
 `make-lab` pre-accepts Claude's "trust this folder" dialog (and its permissions warning) for the lab path by setting `projects["<lab path>"].hasTrustDialogAccepted` in `~/.claude.json`, with a backup at `~/.claude.json.bak-make-lab`. Skip that block of `make-lab` if you would rather answer the dialog yourself.
+
+## Step 5. Use it on a real repo (no lab copy)
+
+Steps 1 to 3 are once per machine. Per repo you run one command, once:
+
+```bash
+real-init ~/Projects/dotb/busy-bees     # once per repo, safe to re-run
+repo-tab  ~/Projects/dotb/busy-bees     # every time you want the NGISA there
+```
+
+`real-init` installs the kit in place and commits nothing: every file it adds is listed in `.git/info/exclude`.
+
+| It does | Detail |
+|---|---|
+| Copies the rules | `CLAUDE.local.md` (= `orchestrating.md`) and `.claude/agents/implementer.md`. A `CLAUDE.local.md` that is not the kit's stops it: merge by hand |
+| Merges settings | The kit's allow, deny and hooks are added to your `.claude/settings.local.json`; your other keys stay. Backup: `settings.local.json.bak-real-init` |
+| Runs `agent-init` | `tool/setup.sh`, `tool/ci_local.sh`, `.worktreeinclude`, `.claude/ngisa-settings.json`. Review them before the first task |
+| Adds `upstream` | An alias of `origin`, so `agent-pr` works. Plain `git push` stays denied |
+
+What differs from a lab:
+
+- No clone: workers get worktrees of the real repo under `.claude/worktrees/`. The main checkout is never edited by the NGISA, and it merges in its own `integration` worktree, so uncommitted work in the main checkout is safe.
+- `repo-tab` adds `ngisa-guard` as a `PreToolUse` hook (NGISA only, workers never load it). It blocks shell writes into the code dirs (`> lib/..`, `sed -i`, `cp`, `mv`, `tee`) and direct `flutter test` / `dart test` / `phpunit`. `./tool/ci_local.sh` stays allowed. Best effort on the command text, not a sandbox.
+- A repo with no `origin` is refused. A lab clone is refused (use `make-lab`).
+- The check that it left no trace: `git status` shows nothing new, and `diff CLAUDE.local.md <kit>/orchestrating.md` is empty.
 
 ### How a repo says what its stack is
 

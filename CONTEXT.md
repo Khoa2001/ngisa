@@ -97,6 +97,13 @@ Hypotheses to test:
 - Full isolation is possible with `CLAUDE_CONFIG_DIR=~/.claude-lab`, but it means reinstalling superpowers, so it was skipped.
 - Cleanup: `rm -rf ~/lab/<repo>`.
 
+### Real repos (2026-10-16)
+- Trigger: an NGISA session on the real busy-bees (no kit files there) fixed a bug inline: no orchestrating rules, no edit deny. Looked identical to a lab pane because the pane is named `ngisa-<basename>`. See `docs/runs/2026-10-16-ngisa-inline-fix.md`.
+- `real-init <repo>` (once per repo) installs the kit in place, nothing committed: files go in `.git/info/exclude`, `settings.local.json` is merged (own keys kept, backup `.bak-real-init`), `agent-init` runs, `upstream` is added as an alias of `origin` so `agent-pr` works. Refuses a lab clone or a foreign `CLAUDE.local.md`. `agent-init` no longer edits the tracked `.gitignore` when `.claude/worktrees/` is already ignored.
+- `ngisa-guard` (PreToolUse hook, NGISA only, added by `repo-tab` through `--settings`) closes the shell-edit gap: blocks writes into the code dirs and direct `flutter test` / `dart test` / `phpunit`. Best effort on the command text. Dirs come from the repo's `ngisa-settings.json` deny list via `NGISA_CODE_DIRS` / `NGISA_CODE_EXT`.
+- `orchestrating.md`: a bug report is a task for a worker; the NGISA merges in its own `integration` worktree, never in the main checkout.
+- Still global-config-free: `~/.claude` untouched. Existing labs keep their old `CLAUDE.local.md` until re-copied.
+
 ## Kit map
 
 | Kit file | Source in the docs |
@@ -105,7 +112,7 @@ Hypotheses to test:
 | `orchestrating.md` (becomes `CLAUDE.local.md` in a lab) | section 2c, plus the queue, quick-task, relay and PR rules from lab-quickstart.md |
 | `settings.local.json` (permissions + caveman hook) | section 2d, plus lab-quickstart.md step 2 |
 | `ngisa-settings.json` (NGISA-only edit deny, Flutter fallback; per-repo copy comes from `agent-init`) | lab-quickstart.md step 2 |
-| `~/bin/agent-init`, `make-lab`, `repo-tab`, `agent-wall.sh`, `agent-pr`, `caveman-ultra-hook`, `gate-check`, `ngisa-report` | lab-quickstart.md step 3 |
+| `~/bin/agent-init`, `make-lab`, `real-init`, `ngisa-guard`, `repo-tab`, `agent-wall.sh`, `agent-pr`, `caveman-ultra-hook`, `gate-check`, `ngisa-report` | lab-quickstart.md step 3 |
 
 If the kit and the docs disagree, the newest doc wins. lab-quickstart.md has the latest changes: fvm detection in `agent-init`, `ngisa-settings.json`, the queue rule, and the NGISA rules below. The kit files and `~/bin` scripts are regenerated from its heredocs.
 
@@ -123,7 +130,7 @@ If the kit and the docs disagree, the newest doc wins. lab-quickstart.md has the
 - Exercise the real flow in WezTerm once: `agent-wall.sh` panes, the queue, report delivery.
 - Pick the 3 real projects and a human-only or assisted baseline task.
 - Decide where run logs and metrics live (this repo is the natural place: add `runs/`).
-- Close the NGISA's shell-edit gap. Same for workers: a shell edit of `tool/ci_local.sh` is only caught by `gate-check`, after the fact.
+- (Mostly done 2026-10-16, `ngisa-guard`; test in a real run) Close the NGISA's shell-edit gap. Same for workers: a shell edit of `tool/ci_local.sh` is only caught by `gate-check`, after the fact.
 - Run `agent-pr` for real against a throwaway repo on GitHub and on Gitea. Only the dry run and the guards were tested.
 - Check that Opus and Sonnet follow the caveman hook, and that worktree sessions load the hook (they use the project settings of the main clone).
 - Fix the worktree branch naming mismatch.

@@ -30,6 +30,13 @@ Cần macOS, [WezTerm](https://wezterm.org), `jq` và Claude Code bản mới (`
 
 Xong thì `rm -rf ~/lab/<your-repo>`, hoặc fetch một nhánh từ lab về repo thật.
 
+**Dùng thẳng trên repo thật thay vì bản lab** (một lần cho mỗi repo, không commit gì, mọi file đều bị git bỏ qua):
+```bash
+real-init ~/Projects/<your-repo>
+repo-tab  ~/Projects/<your-repo>
+```
+Xem bước 5 của [`lab-quickstart.md`](docs/orchestration/lab-quickstart.md).
+
 ## Tìm hiểu thêm
 
 - [Sơ đồ trực tiếp](https://khoa2001.github.io/ngisa/diagrams/ngisa-and-agent-wall.vi.html) ([en](https://khoa2001.github.io/ngisa/diagrams/ngisa-and-agent-wall.html)): bố cục cửa sổ và luồng từ ý tưởng đến merge trên một trang. Mã nguồn: [`docs/diagrams/`](docs/diagrams/).
