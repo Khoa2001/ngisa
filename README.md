@@ -13,7 +13,7 @@ NGISA (*NGƯỜI GIÁM SÁT*, "the supervisor") is one Claude Code session per r
 ## What you get
 
 - **Parallel, not chaotic.** Up to 3 workers per repo, each in its own git worktree, each on its own task.
-- **A gate the workers cannot fake.** Every worker runs the repo's own `tool/setup.sh` and must pass `tool/ci_local.sh`. `gate-check`, a script, checks that the gate files and lint config were not touched. Flutter, Composer PHP and plain PHP repos get a gate generated for them.
+- **Checks that belong to the repo.** Every worker runs the repo's own `tool/setup.sh`, then the format, analyze and test commands the repo's `CLAUDE.md` names, and reports what it ran. No gate script: you read the diff. Flutter, Composer PHP and plain PHP repos get `tool/setup.sh` generated.
 - **You stay in charge.** You approve the plan and read the diff. Workers cannot push. Only you merge to `main`.
 
 ## Try it
@@ -57,4 +57,4 @@ See step 5 of [`lab-quickstart.md`](docs/orchestration/lab-quickstart.md).
 
 ## Status
 
-Experimental. Each run is logged (time, interventions, gate-check FAILs, cost) under [`docs/runs/`](docs/runs/) as research data, from the "hand-off" project: can an agent system ship production-quality software from a spec, and where must a human stay in the loop?
+Experimental. Each run is logged (time, interventions, red checks, cost) under [`docs/runs/`](docs/runs/) as research data, from the "hand-off" project: can an agent system ship production-quality software from a spec, and where must a human stay in the loop?

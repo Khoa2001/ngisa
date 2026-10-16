@@ -29,15 +29,15 @@ background: true
 ---
 You get ONE task or one plan group from NGISA. Work only inside your worktree.
 The task text starts with `mode: direct` (default when missing) or `mode: plan <absolute path of the plan file>`. Direct mode is the numbered steps below. Plan mode is under "Plan mode" after them.
-The task text gives the paths you may touch, the stack and the test command. Anything missing: use the repo contract below. The repo's CLAUDE.md has the stack conventions; follow them. The git, gate and scope rules below always win.
-1. Before you touch any file, run `./tool/setup.sh`. No such file: your worktree was probably made with a plain `git worktree add`, which skips `.worktreeinclude`. Run `worktree-include` once (it copies the gate files and secrets that `.worktreeinclude` lists from the main checkout), then run `./tool/setup.sh` again. Still no such file: run the setup commands in CLAUDE.md. Neither exists: stop and report now, edit nothing, do not guess a stack.
-2. TDD: write the failing test, show it red, make it green. Use the task's test command, else the one in CLAUDE.md or `tool/ci_local.sh`.
-3. `./tool/ci_local.sh` must exit 0 before you stop. Never edit `tool/ci_local.sh`, `tool/setup.sh` or `tool/known_failures.txt`, and never run `--record-baseline`. `./tool/ci_local.sh <test paths>` runs just those tests for quick checks; the full gate must still exit 0 before you stop. A test listed in `tool/known_failures.txt` was already failing before you; leave it. Never skip, delete or loosen tests, lint rules or analyzer config to get green. If setup or the gate cannot run, or fails for a reason outside your task, stop and report the exact error. A red gate in the report is fine; a faked green is not.
+The task text gives the paths you may touch, the stack and what to verify. Anything missing: use the repo's CLAUDE.md, which has the stack conventions and the commands to format, analyze and test; follow it. The git and scope rules below always win.
+1. Before you touch any file, run `./tool/setup.sh`. No such file: your worktree was probably made with a plain `git worktree add`, which skips `.worktreeinclude`. Run `worktree-include` once (it copies the files `.worktreeinclude` lists from the main checkout), then run `./tool/setup.sh` again. Still no such file: run the setup commands in CLAUDE.md. Neither exists: stop and report now, edit nothing, do not guess a stack.
+2. TDD: write the failing test, show it red, make it green. Use the test command in CLAUDE.md (or the task text).
+3. Before you stop, run the checks CLAUDE.md names (format, analyze, tests) on what you changed, and the whole test suite if CLAUDE.md says so. Never skip, delete or loosen tests, lint rules or analyzer config to get green. A test that was already red before your change: leave it and name it in `unverified:`. CLAUDE.md names no checks, or they cannot run: stop and report the exact error. A red result in the report is fine; a faked green is not.
 4. Commit on your branch. Never push, never merge, never touch main.
 5. Final message: exactly these seven lines, nothing before or after, in caveman ultra (no articles or filler, fragments OK); branch, paths, commands and errors stay exact.
    branch: <branch name>
    files: <paths changed, comma separated>
-   gate: <./tool/ci_local.sh exit code and test count, or the exact error>
+   gate: <the checks you ran and their result, or the exact error>
    scope: in paths | outside: <paths>
    unverified: <what you could NOT verify and why, or none>
    asks: <decisions you deferred, each with your recommendation, separated by ";", or none>
@@ -48,7 +48,7 @@ Plan mode (`mode: plan <path>`): read the plan file (never edit it), then do ste
 - Autonomous: decide conflicts and ambiguities yourself, as the skill says, and write each as `Ruling: <what> - <why> - <cost if wrong>` in its ledger. Do not ask NGISA about rulings.
 - Stop and put it in `asks:` only for the skill's four cases: an irreversible or destructive operation, a security-sensitive action, a side effect outside this worktree (merge, push, publish), a plan so broken every path is a guess.
 - Do not run `finishing-a-development-branch`: no merge, no PR, no push. Leave the work committed on your branch.
-- Steps 3 and 4 still apply: `./tool/ci_local.sh` must exit 0 (a red gate is reported, never faked) and you never touch the gate files.
+- Steps 3 and 4 still apply: run the repo's checks (a red result is reported, never faked).
 - `ledger:` in the report is the path of the ledger file, or `none` in direct mode.
 EOF
 
@@ -58,28 +58,26 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
 1. Size the task first (see Size below). Big tasks: spec → plan with superpowers (brainstorming, writing-plans). STOP and wait for my approval of the plan.
 2. Split the approved plan into tasks. Each task lists the exact paths it may touch, the stack (e.g. flutter, php)
    and the test command, and that text goes into the worker's prompt. A repo can mix stacks: name the stack per task.
-   The test command is always `./tool/ci_local.sh <test paths>` (the repo's own script picks the runner). Never write a raw runner (`flutter test`, `phpunit`, ...) in a task text.
+   Say what to verify, not how: "verify as the repo's CLAUDE.md says". Never write a raw runner (`flutter test`, `phpunit`, ...) in a task text.
    Two tasks that touch the same file are NOT parallel; chain them.
 3. Spawn each parallel task with `agent-wall.sh <task-slug> implementer sonnet "<task text>"`.
    Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
    Before the first spawn of a new plan run `ngisa-report clear`.
    If you create a worker's worktree yourself with `git worktree add`, git skips `.worktreeinclude`: tell the worker in its task text
-   to run `worktree-include` before anything else, so it gets `tool/setup.sh` and `tool/ci_local.sh`.
+   to run `worktree-include` before anything else, so it gets `tool/setup.sh`.
    More tasks than free slots: keep a queue in your reply, start the next one each time a worker's report arrives.
    You may not edit code yourself (your settings deny the code dirs), even for a one-line fix. Every code change goes to a worker.
-   A bug report is a task too: repro, root cause and fix all go to a worker (say "repro first" in the task text). You never run tests, write repro files or edit code with shell commands (`ngisa-guard` blocks them); only `./tool/ci_local.sh` after a merge.
-4. When a worker's report arrives, run `gate-check <branch> <base branch>` (branch from the report; base is the branch the plan was cut from).
-   Exit 0: go on. Exit 1 (findings) or 2 (error, e.g. wrong branch name): stop, do not merge that branch until I decide. Exit 1: record the row as `fail` with each finding line as `--finding`, then send me `ngisa-report ask <slug>` (no worker ask: it gives the default `merge anyway?`). Exit 2: show me the error. It only compares the gate files and the
-   lint/analyzer/CI config; I read the diff myself, so do not add your own review.
+   A bug report is a task too: repro, root cause and fix all go to a worker (say "repro first" in the task text). You never run tests, write repro files or edit code with shell commands (`ngisa-guard` blocks them).
+4. When a worker's report arrives, read it and record the row. I read the diff myself, so do not add your own review.
    Then record the row: `ngisa-report set <slug> --base <base branch> --branch <branch> --state ok|fail|blocked --gate '<gate line>' --tests '<n pass>' --diff <files> <added> <removed>`
-   plus `--finding '<text>'` per gate-check finding (ignore a worker's `ledger:` line: do not show it; give its path only when I ask), `--ask '<text>|<why>|<rec>'` per item in the worker's `asks:` (leave `<why>` empty when the worker gave none: never invent one; text max 60, why max 80, rec max 24 characters, `set` refuses longer: shorten, do not paste sentences), `--unverified '<text>'` per item in its `unverified:`.
-   `fail` when gate-check exited 1 or the gate was red, `blocked` when it waits on me, else `ok`; a worker still running is `--state working`.
-   Diff counts: `git diff --shortstat <base>...<branch>`. Always single-quote text values (worker and gate-check text holds `$` and backticks); a `'` inside text becomes `'\''`.
+   plus `--finding '<text>'` per problem the worker's report names (ignore a worker's `ledger:` line: do not show it; give its path only when I ask), `--ask '<text>|<why>|<rec>'` per item in the worker's `asks:` (leave `<why>` empty when the worker gave none: never invent one; text max 60, why max 80, rec max 24 characters, `set` refuses longer: shorten, do not paste sentences), `--unverified '<text>'` per item in its `unverified:`.
+   `fail` when the worker's `gate:` line shows a red check, `blocked` when it waits on me, else `ok`; a worker still running is `--state working`.
+   Diff counts: `git diff --shortstat <base>...<branch>`. Always single-quote text values (worker text holds `$` and backticks); a `'` inside text becomes `'\''`.
 5. Only one agent runs integration tests / the emulator at a time.
-6. Merge task branches that passed the latest gate-check (or that I allowed) into a local feature branch and run ./tool/ci_local.sh. Never push on your own.
+6. Merge task branches that finished ok (or that I allowed) into a local feature branch. Never push on your own.
    Do the merge in its own worktree (`git worktree add .claude/worktrees/integration -b <feature branch>`). Never check out or merge in the main checkout: it may hold my uncommitted work.
 7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board of cards), then the PR link if any. Never retype or reword it.
-   When any task has an ask (a worker ask or a red gate), send ONLY `ngisa-report ask <slug>` for it, not the board: the card already carries the state, and the same task must never appear twice in one message.
+   When any task has an ask (a worker ask), send ONLY `ngisa-report ask <slug>` for it, not the board: the card already carries the state, and the same task must never appear twice in one message.
 Quiet: my screen is for decisions, not a log. While workers run, say ONE line per event (spawn: `<slug> spawned. Gate-check next.`).
   No board until a worker reports, no session ids or `claude attach` hints (the worker pane shows its work), and never mention
   hook blocks, retries or workarounds: fix them silently. Only asks, the board after a report, and the PR link get more than one line.
@@ -94,8 +92,7 @@ Size: judge every task and say it in one line (`tiny`, `small` or `big`, and why
   Direct-mode tasks start `mode: direct`. A tiny or small task never gets reviewers.
 Relay: when I ask for something extra from a worker (e.g. "have it carve", "fix the lint"), SendMessage it to
   that worker (same session, same branch). For carve: tell it to run /carve; I answer its prompts with `claude attach <name>` (worker panes are read-only).
-  After any relay that changes a worker's commits, run gate-check on that branch again before merging.
-Pull request: only when I ask, from the local feature branch, after ci_local.sh is green. Run
+Pull request: only when I ask, from the local feature branch. Run
   `agent-pr "<title>" "<body>"` (draft PR; it pushes to the `upstream` remote). I approve each call.
   Never use `git push` or `gh`/`tea` directly. Branch name must not start with `worktree-`.
 Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, questions, report tables): drop articles, filler,
@@ -118,14 +115,13 @@ cat > $KIT/settings.local.json <<'EOF'
       "Bash(composer install:*)", "Bash(composer run-script:*)", "Bash(vendor/bin/phpunit:*)",
       "Bash(vendor/bin/pint:*)", "Bash(vendor/bin/phpstan:*)",
       "Bash(php -l:*)", "Bash(php tests/:*)", "Bash(diff:*)",
-      "Bash(./tool/setup.sh)", "Bash(./tool/ci_local.sh)", "Bash(./tool/ci_local.sh test/*)", "Bash(./tool/ci_local.sh tests/*)",
+      "Bash(./tool/setup.sh)",
       "Bash(git status)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)", "Bash(git commit:*)",
-      "Bash(git merge:*)", "Bash(git checkout:*)", "Bash(agent-wall.sh:*)", "Bash(worktree-include)", "Bash(gate-check:*)", "Bash(ngisa-report:*)"
+      "Bash(git merge:*)", "Bash(git checkout:*)", "Bash(agent-wall.sh:*)", "Bash(worktree-include)", "Bash(ngisa-report:*)"
     ],
     "deny": [
       "Bash(git push:*)", "Bash(flutter pub publish:*)", "Bash(dart pub publish:*)",
-      "Bash(fastlane:*)", "Bash(firebase deploy:*)",
-      "Edit(tool/ci_local.sh)", "Edit(tool/setup.sh)", "Edit(tool/known_failures.txt)"
+      "Bash(fastlane:*)", "Bash(firebase deploy:*)"
     ]
   },
   "hooks": {
@@ -158,7 +154,7 @@ ls -R $KIT     # expect: agents/implementer.md orchestrating.md settings.local.j
 cat > ~/bin/agent-init <<'EOF'
 #!/usr/bin/env bash
 # run once in a repo root: detects the stack(s) and adds the per-repo files if missing
-# (tool/setup.sh, tool/ci_local.sh, .worktreeinclude, .claude/ngisa-settings.json, a .gitignore line)
+# (tool/setup.sh, .worktreeinclude, .claude/ngisa-settings.json, a .gitignore line)
 set -euo pipefail
 mkdir -p tool .claude
 git check-ignore -q .claude/worktrees/x 2>/dev/null || grep -qxF '.claude/worktrees/' .gitignore 2>/dev/null || echo '.claude/worktrees/' >> .gitignore
@@ -204,75 +200,6 @@ B
     ;;
   esac
 }
-ci_block() {  # kind dir
-  case $1 in
-    flutter) sed "s|__DIR__|$2|g" <<'B'
-( cd "__DIR__"
-  if command -v fvm >/dev/null; then F="fvm flutter"; D="fvm dart"; else F=flutter; D=dart; fi
-  # format: only the .dart files this branch changed (committed or not), so old unformatted code never blocks a worker
-  base=$(git merge-base HEAD origin/HEAD 2>/dev/null || git rev-parse HEAD)
-  changed=$( { git diff --name-only --relative --diff-filter=ACMR "$base" -- '*.dart'; git ls-files --others --exclude-standard -- '*.dart'; } | sort -u )
-  if [[ -n $changed ]]; then printf '%s\n' "$changed" | tr '\n' '\0' | xargs -0 $D format --output=none --set-exit-if-changed; fi
-  if [[ -f melos.yaml ]]; then
-    melos analyze && melos test
-  else
-    # errors anywhere fail the gate; warnings only in the files this branch changed (old code has hundreds)
-    $F analyze --no-fatal-warnings --no-fatal-infos
-    if [[ -n $changed ]]; then printf '%s\n' "$changed" | tr '\n' '\0' | xargs -0 $F analyze --no-fatal-infos; fi
-    # tests: fail only on failures that are not listed in tool/known_failures.txt (old failures of a repo that is red).
-    # Extra args go to `flutter test` (paths, --plain-name). `--record-baseline` rewrites the list from this run.
-    # --record-baseline only counts as the first argument, so the allow rule for `./tool/ci_local.sh test/*` cannot record one
-    record=0; if [[ ${1:-} == --record-baseline ]]; then record=1; shift; fi
-    targs=("$@")
-    out=$(mktemp); rc=0
-    $F test --reporter json ${targs[@]+"${targs[@]}"} > "$out" || rc=$?
-    failing=$(jq -R 'fromjson? // empty' "$out" | jq -sr --arg root "$PWD/" '
-      (map(select(.type=="suite")) | map({key: (.suite.id|tostring), value: (.suite.path|ltrimstr($root))}) | from_entries) as $s
-      | (map(select(.type=="testStart")) | map({key: (.test.id|tostring), value: "\($s[(.test.suiteID|tostring)])::\(.test.name | split($root) | join(""))"}) | from_entries) as $t
-      | map(select(.type=="testDone" and .result!="success" and (.skipped|not)) | $t[(.testID|tostring)]) | unique | .[]' | sed '/^$/d')
-    known="$ROOT/tool/known_failures.txt"
-    if [[ $record == 1 ]]; then
-      printf '%s\n' "$failing" | sed '/^$/d' > "$known"
-      echo "recorded $(wc -l < "$known" | tr -d ' ') known failures in tool/known_failures.txt"
-    else
-      known_list=$( [[ -f $known ]] && sort -u "$known" || true )
-      new=$(comm -13 <(printf '%s\n' "$known_list") <(printf '%s\n' "$failing" | sort -u) | sed '/^$/d')
-      if [[ -n $new ]]; then echo "NEW test failures (not in tool/known_failures.txt):" >&2; printf '%s\n' "$new" >&2; exit 1; fi
-      if [[ $rc -ne 0 && -z $failing ]]; then echo "flutter test exited $rc without a failing test (compile error?):" >&2; tail -n 20 "$out" >&2; exit 1; fi
-      echo "tests ok: $(printf '%s\n' "$failing" | sed '/^$/d' | wc -l | tr -d ' ') known failures still failing"
-    fi
-  fi )
-B
-    ;;
-    php) sed "s|__DIR__|$2|g" <<'B'
-( cd "__DIR__"
-  if [[ -x vendor/bin/pint ]]; then vendor/bin/pint --test; fi
-  if [[ -x vendor/bin/php-cs-fixer ]]; then vendor/bin/php-cs-fixer fix --dry-run --diff; fi
-  if [[ -x vendor/bin/phpstan ]]; then vendor/bin/phpstan analyse --no-progress; fi
-  if grep -q '"test"' composer.json; then composer run-script test
-  elif [[ -x vendor/bin/phpunit ]]; then vendor/bin/phpunit
-  else echo "no PHP test runner found: edit tool/ci_local.sh" >&2; exit 1; fi )
-B
-    ;;
-    phpplain) sed "s|__DIR__|$2|g" <<'B'
-( cd "__DIR__"
-  # lint only the .php files this branch changed (committed or not); vendored and old code is not re-linted
-  base=$(git merge-base HEAD origin/HEAD 2>/dev/null || git rev-parse HEAD)
-  changed=$( { git diff --name-only --relative --diff-filter=ACMR "$base" -- '*.php'; git ls-files --others --exclude-standard -- '*.php'; } | sort -u )
-  while IFS= read -r f; do
-    [[ -n $f ]] || continue
-    out=$(php -l "$f" 2>&1) || { printf '%s\n' "$out" >&2; exit 1; }
-  done <<<"$changed"
-  # tests: every tests/**/*_test.php script (or the paths given as args); each must exit 0
-  if [[ $# -gt 0 ]]; then tests=$(printf '%s\n' "$@"); else tests=$( { git ls-files -- 'tests/*_test.php'; git ls-files --others --exclude-standard -- 'tests/*_test.php'; } | sort -u ); fi
-  while IFS= read -r t; do
-    [[ -n $t ]] || continue
-    echo "== php $t"; php "$t"
-  done <<<"$tests" )
-B
-    ;;
-  esac
-}
 code_dirs() {  # kind
   case $1 in
     flutter) echo lib test integration_test android ios;;
@@ -284,17 +211,14 @@ code_dirs() {  # kind
 wi='.env
 .env.local'
 deny=""
-setup_body="" ci_body=""
+setup_body=""
 while IFS=: read -r kind dir; do
   [[ -n $kind ]] || continue
   setup_body="$setup_body$(setup_block "$kind" "$dir")
 "
-  ci_body="$ci_body$(ci_block "$kind" "$dir")
-"
   p=""; [[ $dir == . ]] || p="$dir/"
   case $kind in
     flutter) wi="$wi
-tool/known_failures.txt
 ${p}android/key.properties
 ${p}android/app/google-services.json
 ${p}ios/Runner/GoogleService-Info.plist";;
@@ -314,7 +238,7 @@ ${p}.env";;
 done <<<"$stacks"
 
 if [[ -z $stacks ]]; then
-  echo "no stack detected (no pubspec.yaml, composer.json or root index.php): write tool/setup.sh and tool/ci_local.sh by hand" >&2
+  echo "no stack detected (no pubspec.yaml, composer.json or root index.php): write tool/setup.sh by hand" >&2
 fi
 mk() {  # file body
   [[ -f $1 || -z $2 ]] && return 0
@@ -322,11 +246,10 @@ mk() {  # file body
   chmod +x "$1"
 }
 mk tool/setup.sh "$setup_body"
-mk tool/ci_local.sh "$ci_body"
 [[ -f .worktreeinclude ]] || printf '%s\n' "$wi" | awk 'NF && !seen[$0]++' > .worktreeinclude
 # no code dirs found: write nothing, repo-tab then falls back to the kit's ngisa-settings.json
 if [[ ! -f .claude/ngisa-settings.json && -n $deny ]]; then printf '%s' "$deny" | jq -R -s '(split("\n") | map(select(length>0)) | map(["Edit(\(.))"]) | add // []) as $d | {permissions: {deny: $d}}' > .claude/ngisa-settings.json; fi
-echo "done: review tool/setup.sh, tool/ci_local.sh and .worktreeinclude (secrets), then commit"
+echo "done: review tool/setup.sh and .worktreeinclude (secrets), then commit"
 EOF
 
 cat > ~/bin/make-lab <<'EOF'
@@ -345,14 +268,14 @@ mkdir -p .claude/agents
 cp "$kit"/agents/*.md .claude/agents/
 cp "$kit/settings.local.json" .claude/settings.local.json
 cp "$kit/orchestrating.md" CLAUDE.local.md
-printf '.claude/agents/\n.claude/ngisa-settings.json\n.claude/worktrees/\n.claude/plans/\nCLAUDE.local.md\n.worktreeinclude\ntool/setup.sh\ntool/ci_local.sh\ntool/known_failures.txt\n' >> .git/info/exclude
+printf '.claude/agents/\n.claude/ngisa-settings.json\n.claude/worktrees/\n.claude/plans/\nCLAUDE.local.md\n.worktreeinclude\ntool/setup.sh\n' >> .git/info/exclude
 agent-init
 # copy the gitignored secrets that .worktreeinclude lists (literal paths only) from the source repo
 while IFS= read -r f || [[ -n $f ]]; do
   case $f in ''|'#'*|*'*'*|*'?'*|*'['*|/*|*..*) continue;; esac
   if [[ -f "$src/$f" ]]; then mkdir -p "$(dirname "$f")"; cp "$src/$f" "$f"; fi
 done < .worktreeinclude
-printf 'tool/setup.sh\ntool/ci_local.sh\n' >> .worktreeinclude    # untracked here, so each agent worktree needs them copied in
+printf 'tool/setup.sh\n' >> .worktreeinclude    # untracked here, so each agent worktree needs them copied in
 # a CLAUDE.md or AGENTS.md that git does not track (gitignored or untracked in the source) is not in the clone:
 # copy it, and list it so every agent worktree gets it too
 for f in CLAUDE.md AGENTS.md; do
@@ -468,55 +391,6 @@ fi
 echo "$new" > "$state/$name"
 equalize_column ${impl[@]+"${impl[@]}"} "$new"
 wezterm cli activate-pane --pane-id "$me" >/dev/null 2>&1 || true
-EOF
-
-cat > ~/bin/gate-check <<'EOF'
-#!/usr/bin/env bash
-# gate-check <branch> [base-branch]
-# Did the worker on <branch> touch the gate? The NGISA runs this on each worker report, from the main checkout.
-#  1. tool/ci_local.sh, tool/setup.sh, tool/known_failures.txt: the branch's worktree copy must equal the main checkout's copy
-#     (in a lab these files are untracked, so git diff would not show a change).
-#  2. Lint, analyzer, test and CI config must not differ between the base branch and <branch>.
-# Exit 0 clean, 1 findings (printed), 2 usage or git error. It never edits anything.
-set -uo pipefail
-branch=${1:-}
-[[ -n $branch ]] || { echo "usage: gate-check <branch> [base-branch]" >&2; exit 2; }
-common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || { echo "gate-check: not in a git repo" >&2; exit 2; }
-main=$(cd "$common/.." && pwd -P)
-git -C "$main" rev-parse --verify -q "refs/heads/$branch" >/dev/null || { echo "gate-check: no local branch '$branch'" >&2; exit 2; }
-base=${2:-$(git -C "$main" branch --show-current)}
-[[ -n $base ]] || { echo "gate-check: main checkout is detached, pass a base branch" >&2; exit 2; }
-mb=$(git -C "$main" merge-base "$base" "refs/heads/$branch") || { echo "gate-check: no merge base for $base and $branch" >&2; exit 2; }
-wt=$(git -C "$main" worktree list --porcelain | awk -v b="refs/heads/$branch" '/^worktree /{p=substr($0,10)} $0=="branch " b{print p; exit}')
-fail=0
-# a worktree that was removed by hand stays registered until `git worktree prune`: treat it as no worktree
-[[ -n $wt && ! -d $wt ]] && { echo "NOTE worktree of $branch is gone: untracked gate files not compared"; wt=; }
-if [[ -n $wt && $(cd "$wt" && pwd -P) != "$main" ]]; then
-  for f in tool/ci_local.sh tool/setup.sh tool/known_failures.txt; do
-    a=$main/$f; b=$wt/$f
-    [[ -e $a || -e $b ]] || continue
-    [[ -e $a ]] || a=/dev/null
-    if [[ ! -e $b ]]; then echo "FAIL gate file missing in worktree: $f (did the worker run worktree-include?)"; fail=1; continue; fi
-    if ! d=$(diff -u --label "main/$f" --label "worktree/$f" "$a" "$b"); then
-      echo "FAIL gate file differs: $f"; printf '%s\n' "$d"; fail=1
-    fi
-  done
-fi
-# gate files committed on the branch, lint/analyzer/test/CI config (also catches renames and deletions)
-cfg='^tool/(ci_local\.sh|setup\.sh|known_failures\.txt)$|(^|/)(analysis_options\.yaml|dart_test\.yaml|melos\.yaml|phpstan\.neon(\.dist)?|phpunit\.xml(\.dist)?|pint\.json|\.php-cs-fixer(\.dist)?\.php|\.eslintrc[^/]*|eslint\.config\.[^/]*|\.gitlab-ci\.yml|bitbucket-pipelines\.yml|codemagic\.yaml)$|^\.(github/workflows|circleci)/'
-names=$(git -C "$main" diff --no-renames --name-only "$mb" "refs/heads/$branch" --) || { echo "gate-check: git diff failed" >&2; exit 2; }
-changed=$(printf '%s\n' "$names" | grep -E "$cfg" || true)
-if [[ -n $changed ]]; then
-  echo "FAIL gate or lint/test/CI config changed on $branch:"; printf '%s\n' "$changed" | sed 's/^/  /'; fail=1
-fi
-# manifests change for dependencies all the time: only flag lines that touch test, lint or analyze scripts or rules
-for m in composer.json package.json pubspec.yaml; do
-  printf '%s\n' "$names" | grep -qE "(^|/)$m$" || continue
-  hit=$(git -C "$main" diff --no-renames -U0 "$mb" "refs/heads/$branch" -- ':(glob)**/'"$m" "$m" | grep -E '^[+-][^+-].*("scripts"|"test"|"lint"|"analyze"|"check"|flutter_lints|phpunit|phpstan|eslint)' || true)
-  if [[ -n $hit ]]; then echo "FAIL $m changed lines that touch test or lint rules:"; printf '%s\n' "$hit" | sed 's/^/  /'; fail=1; fi
-done
-(( fail )) && exit 1
-echo "gate-check: clean ($branch vs $base)"
 EOF
 
 cat > ~/bin/agent-tail <<'EOF'
@@ -1604,7 +1478,7 @@ EOF
 cat > ~/bin/worktree-include <<'EOF'
 #!/usr/bin/env bash
 # Run inside a git worktree. Copies the files that the main checkout's .worktreeinclude lists and this worktree lacks
-# (tool/setup.sh, tool/ci_local.sh, secrets, an untracked CLAUDE.md). A plain `git worktree add` skips .worktreeinclude;
+# (tool/setup.sh, secrets, an untracked CLAUDE.md). A plain `git worktree add` skips .worktreeinclude;
 # a worktree that Claude creates does not.
 set -euo pipefail
 here=$(git rev-parse --show-toplevel)
@@ -1650,7 +1524,7 @@ case $(awk '{print $1; exit}' <<<"$cmd") in
 esac
 dirs=${NGISA_CODE_DIRS:-lib test integration_test android ios}   # repo-tab exports the dirs from the repo's deny list
 block() { echo "NGISA must not do this itself ($1). Spawn an implementer: agent-wall.sh <slug> implementer sonnet \"<task>\"." >&2; exit 2; }
-# a test runner called directly (ci_local.sh after a merge is allowed)
+# a test runner called directly
 if grep -Eq '(^|[;&|(` ]|\$\()[[:space:]]*(fvm[[:space:]]+)?(flutter|dart)[[:space:]]+test([[:space:]]|$)|(^|[;&|(` ])[[:space:]]*(\./)?vendor/bin/phpunit' <<<"$cmd"; then
   block "runs tests directly"
 fi
@@ -1703,18 +1577,18 @@ jq --slurpfile k "$kit/settings.local.json" '
   "$f.bak-real-init" > "$f"
 # keep it all out of git. Appended once, only what is missing.
 ex=$(git rev-parse --git-path info/exclude); mkdir -p "$(dirname "$ex")"; touch "$ex"
-for p in .claude/agents/ .claude/ngisa-settings.json .claude/worktrees/ .claude/plans/ .claude/settings.local.json '.claude/*.bak-real-init' CLAUDE.local.md 'CLAUDE.local.md.bak-real-init' .worktreeinclude tool/setup.sh tool/ci_local.sh tool/known_failures.txt; do
+for p in .claude/agents/ .claude/ngisa-settings.json .claude/worktrees/ .claude/plans/ .claude/settings.local.json '.claude/*.bak-real-init' CLAUDE.local.md 'CLAUDE.local.md.bak-real-init' .worktreeinclude tool/setup.sh; do
   grep -qxF "$p" "$ex" || printf '%s\n' "$p" >> "$ex"
 done
 # agent-init wants origin/HEAD to pick its base
 git rev-parse -q --verify origin/HEAD >/dev/null || git remote set-head origin -a >/dev/null 2>&1 || true
 agent-init
-# tool/setup.sh and tool/ci_local.sh are untracked here (git-excluded), so each worker worktree needs them copied in: list them
-for f in tool/setup.sh tool/ci_local.sh; do grep -qxF "$f" .worktreeinclude || printf '%s\n' "$f" >> .worktreeinclude; done
+# tool/setup.sh is untracked here (git-excluded), so each worker worktree needs it copied in: list it
+for f in tool/setup.sh; do grep -qxF "$f" .worktreeinclude || printf '%s\n' "$f" >> .worktreeinclude; done
 # the only push path is agent-pr, which pushes to `upstream`: an alias of origin
 git remote get-url upstream >/dev/null 2>&1 || git remote add upstream "$origin"
 echo "real repo ready: repo-tab $PWD"
-echo "next: review tool/setup.sh, tool/ci_local.sh and .worktreeinclude (secrets). Check: git status shows nothing new."
+echo "next: review tool/setup.sh and .worktreeinclude (secrets). Check: git status shows nothing new."
 EOF
 
 cat > ~/bin/agent-pr <<'EOF'
@@ -1742,8 +1616,8 @@ case $url in
 esac
 EOF
 
-chmod +x ~/bin/agent-tail ~/bin/ngisa-guard ~/bin/real-init ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/agent-view ~/bin/ngisa-statusline ~/bin/worktree-include ~/bin/caveman-ultra-hook ~/bin/agent-pr ~/bin/gate-check ~/bin/ngisa-report
-which agent-tail real-init ngisa-guard make-lab repo-tab agent-wall.sh agent-view ngisa-statusline worktree-include agent-pr caveman-ultra-hook gate-check ngisa-report      # all thirteen must print a path
+chmod +x ~/bin/agent-tail ~/bin/ngisa-guard ~/bin/real-init ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/agent-view ~/bin/ngisa-statusline ~/bin/worktree-include ~/bin/caveman-ultra-hook ~/bin/agent-pr ~/bin/ngisa-report
+which agent-tail real-init ngisa-guard make-lab repo-tab agent-wall.sh agent-view ngisa-statusline worktree-include agent-pr caveman-ultra-hook ngisa-report      # all thirteen must print a path
 ```
 
 (macOS ships bash 3.2, so `agent-wall.sh` here avoids `mapfile` and negative array indexes.)
@@ -1775,34 +1649,32 @@ repo-tab  ~/Projects/dotb/busy-bees     # every time you want the NGISA there
 |---|---|
 | Copies the rules | `CLAUDE.local.md` (= `orchestrating.md`) and `.claude/agents/implementer.md`. A `CLAUDE.local.md` that is not the kit's stops it: merge by hand |
 | Merges settings | The kit's allow, deny and hooks are added to your `.claude/settings.local.json`; your other keys stay. Backup: `settings.local.json.bak-real-init` |
-| Runs `agent-init` | `tool/setup.sh`, `tool/ci_local.sh`, `.worktreeinclude`, `.claude/ngisa-settings.json`. Review them before the first task |
+| Runs `agent-init` | `tool/setup.sh`, `.worktreeinclude`, `.claude/ngisa-settings.json`. Review them before the first task |
 | Adds `upstream` | An alias of `origin`, so `agent-pr` works. Plain `git push` stays denied |
 
 What differs from a lab:
 
 - No clone: workers get worktrees of the real repo under `.claude/worktrees/`. The main checkout is never edited by the NGISA, and it merges in its own `integration` worktree, so uncommitted work in the main checkout is safe.
-- `repo-tab` adds `ngisa-guard` as a `PreToolUse` hook (NGISA only, workers never load it). It blocks shell writes into the code dirs (`> lib/..`, `sed -i`, `cp`, `mv`, `tee`) and direct `flutter test` / `dart test` / `phpunit`. `./tool/ci_local.sh` stays allowed. Best effort on the command text, not a sandbox.
+- `repo-tab` adds `ngisa-guard` as a `PreToolUse` hook (NGISA only, workers never load it). It blocks shell writes into the code dirs (`> lib/..`, `sed -i`, `cp`, `mv`, `tee`) and direct `flutter test` / `dart test` / `phpunit`. Best effort on the command text, not a sandbox.
 - A repo with no `origin` is refused. A lab clone is refused (use `make-lab`).
 - The check that it left no trace: `git status` shows nothing new, and `diff CLAUDE.local.md <kit>/orchestrating.md` is empty.
 
 ### How a repo says what its stack is
 
-The implementer prompt names no tool. It runs two files the repo owns, and `agent-init` writes them once from what it finds:
+The implementer prompt names no tool. It runs one file the repo owns, `tool/setup.sh`, and takes its test, format and analyze commands from the repo's `CLAUDE.md`. `agent-init` writes `tool/setup.sh` once from what it finds:
 
 | File | Written from | Used for |
 |---|---|---|
 | `tool/setup.sh` | `pubspec.yaml` (Flutter, fvm, melos, build_runner), `composer.json` (PHP, `composer install`), or a root `index.php` with no `composer.json` (plain PHP with vendored deps: nothing to install) | implementer step 1 |
-| `tool/ci_local.sh` | the same detection. Flutter: `dart format` on the files the branch changed, `flutter analyze` (errors fail anywhere, warnings fail in changed files), `flutter test` failing only on tests not listed in `tool/known_failures.txt`. PHP with Composer: pint or php-cs-fixer, phpstan, then `composer test` or phpunit. Plain PHP: `php -l` on the changed `.php` files, then every `tests/**/*_test.php` script must exit 0 | the done gate |
-| `tool/known_failures.txt` | made by `./tool/ci_local.sh --record-baseline` (you run it once on a clean base; the worker cannot) | tests that already fail, so the Flutter gate stays green on a red repo |
 | `.worktreeinclude` | per stack secrets paths (Flutter signing and Firebase files, PHP `.env` and `auth.json`) | files each worktree needs |
 | `.claude/ngisa-settings.json` | the code dirs that exist for the stack (Flutter `lib`, `test`, ...; PHP `app`, `src`, `tests`, ...); plain PHP denies every `**/*.php` | NGISA edit deny list, used by `repo-tab` |
 
-- A manifest at the repo root wins; otherwise `agent-init` looks one level down, so a Flutter app in `app/` plus a PHP backend in `backend/` gets one gate that runs both.
+- A manifest at the repo root wins; otherwise `agent-init` looks one level down, so a Flutter app in `app/` plus a PHP backend in `backend/` gets one setup that runs both.
 - The generated files are a starting point. Review them against the repo's real CI, then commit them. `agent-init` never overwrites a file that exists.
-- No manifest found (another stack): it writes no setup or gate and says so. Write both by hand; nothing else changes.
+- No manifest found (another stack): it writes no setup and says so. Write `tool/setup.sh` by hand; nothing else changes.
 - Put stack conventions that are not commands (for example "run migrations on the test DB before phpunit") in the repo's `CLAUDE.md`. Workers read it.
 - Each task the NGISA hands out lists its paths, stack and test command; the worker uses those first and the repo files as the fallback.
-- Gate integrity: `settings.local.json` denies Edit on `tool/setup.sh`, `tool/ci_local.sh` and `tool/known_failures.txt` (change them by hand). On each worker report the NGISA runs `gate-check <branch>`, which fails if a worktree's copy of those files differs from the main checkout, or if lint, analyzer, test or CI config changed on the branch. It checks nothing else: you read the diff. Known gap: it runs after the worker is done, so a shell edit such as `sed -i` is reported, not prevented.
+- No gate (removed 2026-10-16): there is no `ci_local.sh`, `known_failures.txt` or `gate-check`. The worker runs the checks the repo's `CLAUDE.md` names and says in its `gate:` line what it ran and what came back; you read the diff. A worker may edit any file in its task paths; nothing checks that it did not loosen a test or lint rule, so read the diff for that.
 
 ## Step 5. First test (small on purpose)
 
@@ -1813,7 +1685,7 @@ In the NGISA tab, type something tiny with 2 independent parts, e.g.:
 Approve the spec, approve the plan, then say `go`. The NGISA answers in caveman ultra (the hook in `settings.local.json`). You should see:
 - 2 panes open on the right of the NGISA, one per agent. Default view is `agent-tail` (since 2026-10-16): a live stream of the worker's messages (since the 2026-10-16 follow-up: framed by a double-line border with the session name in the top edge, a real diff of each edit with only the changed lines, the last lines of each command's output, and a narrower pane: `AGENT_WALL_WIDTH`, default 38 percent; `AGENT_TAIL_DIFF` and `AGENT_TAIL_OUT` set how many lines show), tool calls and one-line results, newest at the bottom, with no input box and no status bar, read-only. `AGENT_VIEW=attach` gives the full `claude attach` pane (input box); `AGENT_VIEW=status` gives the older status-only `agent-view`, which shows only status: the name, `working`, `needs you` or `done` with the time, one dim line (the branch), and one result line (the commit). A worker that has made no move for 2 minutes gets a dim `quiet for Nm` line; a worker that needs you shows the question and `claude attach <name>`; a red line says so if the NGISA never got the worker's result. There is no input box. `AGENT_VIEW_DETAIL=1` brings back the full view (phase strip, counters, a `now` line and a log). The NGISA's status line adds a `workers` roster (`ngisa-statusline`). To answer a worker that shows `needs you`, run `claude attach <name>` in a spare pane. `AGENT_VIEW=attach` makes `agent-wall.sh` open the full `claude attach` pane instead.
 - each agent finishes with tests green, then the NGISA says it got a report
-- the NGISA runs `gate-check` on each branch, merges the clean ones into a feature branch, runs `ci_local.sh`, and shows you one table (task | branch | gate-check | tests | unverified items)
+- the NGISA records each worker report as a card, merges the finished branches into a feature branch, and shows you the cards (task | branch | checks | unverified count)
 
 Optional: run `claude agents` in a spare tab to see every agent in one list. `repo-tab` does not open an overview tab.
 
@@ -1842,7 +1714,6 @@ To open a draft PR from the lab instead, tell the NGISA "open a PR" once the fea
 | want the `workers` line in the NGISA status line back | it is off by default; start with `NGISA_ROSTER=1 repo-tab <path>`. `which ngisa-statusline` must print a path |
 | worker pane blank or garbled | `agent-view` reads the session transcript under `~/.claude/projects/`, an internal format. Use `AGENT_VIEW=attach` until it is fixed |
 | tweakcc customisations gone | Claude Code auto-updated and the new binary is unpatched. Re-run your tweakcc apply script, restart the NGISA, then `claude daemon stop` between tasks so new workers start from the patched binary. `DISABLE_AUTOUPDATER=1` in your shell profile stops the surprise |
-| implementer says setup or the gate cannot run | `agent-init` guessed the stack wrong, or found none. Edit `tool/setup.sh` and `tool/ci_local.sh` in the lab (and in the real repo) by hand: the repo owns them |
+| implementer says setup or its checks cannot run | `agent-init` guessed the stack wrong, or found none, or the repo's `CLAUDE.md` names no checks. Edit `tool/setup.sh` in the lab (and in the real repo) by hand, or add the commands to `CLAUDE.md`: the repo owns them |
 | worker says `tool/setup.sh` is missing | its worktree came from a plain `git worktree add` (git skips `.worktreeinclude`). `worktree-include`, run inside that worktree, copies the files; the implementer is told to run it |
-| `gate-check: no local branch 'x'` | the branch name in the worker's report is not a local branch of the main checkout; ask the worker for its real branch (`git branch --show-current` in its worktree) |
 | `tab full` | 3 agents already in this tab; wait or `wezterm cli kill-pane --pane-id N` a finished one |
