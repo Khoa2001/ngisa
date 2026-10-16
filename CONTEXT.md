@@ -57,7 +57,7 @@ Hypotheses to test:
 ### NGISA (2026-10-14)
 - The orchestrator is called **NGISA**, short for *NGƯỜI GIÁM SÁT* ("the supervisor" in Vietnamese). It was "gate", then briefly "Aegis". The repo is named `ngisa` too. "Gate" stays only for verification gates (human gates, the Stop gate, CI gates). Sessions are `ngisa-<repo>`, workers report to `@ngisa-<repo>`.
 - Caveman ultra comes from a hook, not a prompt: `settings.local.json` runs `caveman-ultra-hook` on `SessionStart` and `UserPromptSubmit`, so the NGISA and implementers all get it, and worker final reports are terse. Code, commits and PR text stay normal. Checked: the hook fires and injects in a headless session; model compliance varies by model (Haiku ignored it on a plain question).
-- The NGISA can relay extra requests to a worker (for example `/carve`) and has a quick-task path (one small edit in 1-2 named files, no plan, one implementer, gate-check still runs).
+- The NGISA can relay extra requests to a worker (for example `/carve`) and sizes every task (2026-10-16): tiny (no plan, one worker), small (short plan in chat), big (brainstorming, writing-plans, plan mode), borderline asks the user. "quick" means tiny; gate-check always runs.
 - PRs from a lab go through `agent-pr` only. `make-lab` adds the real remote as `upstream` (origin stays the local source with a `DISABLED` push URL). `git push` stays denied in `settings.local.json`; `agent-pr` is not in any allow list, so each call needs the user's approval. It refuses main, master, the base branch, `worktree-*` names and dirty trees, opens a DRAFT PR with `gh` for github.com and `tea` otherwise (busy-bees is on Gitea).
 
 ### Stack-agnostic workers (2026-10-15)
@@ -82,7 +82,7 @@ Hypotheses to test:
 - Final report is the glyph board (one line per task, findings `!` and asks `?` inline, unverified items, legend). It is produced by `ngisa-report set` and pasted unchanged into the chat. JSON per repo: `~/.cache/ngisa/report/ngisa-<repo>.json`.
 - A coloured report pane under the NGISA pane was built first and removed the same day: on a real run it duplicated the chat board and the statusline roster, took height from the NGISA pane, and made the screen messy. `ngisa-report view`, the colour code and the `agent-wall.sh` strip are gone; `agent-wall.sh` is back to workers only.
 - Asks come as `ngisa-report ask <slug>`: finding, why, `y · n · d diff`, rec. One ask per message. `set` refuses an ask with text over 60, why over 80 or rec over 24 characters (a real run produced paragraph-long asks that wrapped across the pane).
-- Implementer final message is six fixed lines: `branch / files / gate / scope / unverified / asks`. The NGISA maps them to the `ngisa-report set` flags.
+- Implementer final message is seven fixed lines: `branch / files / gate / scope / unverified / asks / ledger`. The NGISA maps them to the `ngisa-report set` flags.
 - Not chosen: a post-check hook that rewrites drifting NGISA text (latency, misfires on code and quoted errors); a pane that parses the NGISA transcript (internal format); a coloured report pane (see above).
 
 ### Max plan limits
@@ -104,6 +104,7 @@ Hypotheses to test:
 - `orchestrating.md`: a bug report is a task for a worker; the NGISA merges in its own `integration` worktree, never in the main checkout.
 - Worker pane (2026-10-16): the status-only pane was too bare to watch a worker. New `agent-tail` is the default: live stream of messages, tool calls and results from the session transcript (via agent-view's parser), no input box, no status bar, read-only. `claude logs` was tried first: it prints raw terminal output (spinner noise), not usable. `AGENT_VIEW=attach|status` select the old views. `agent-view`'s gate guess mistook a `git check-ignore` line for a gate failure (not fixed).
 - NGISA tab quiet rule (2026-10-16): one line per event, no board before a report, no session ids, no talk about hook blocks. `ngisa-guard` no longer judges the quoted text of `agent-wall.sh` / `ngisa-report` commands (a task text naming `fvm flutter test` was blocked, and the NGISA narrated the workaround).
+- Sizes and plan mode (2026-10-16): the NGISA stays the single input and sizes each task. `agents/implementer.md` has `mode: direct` (today's behavior, no reviewers) and `mode: plan <path>` (`superpowers:subagent-driven-development`: per-task and final review, autonomous rulings in a ledger, stops only for its four cases, never merges or pushes). Big plans are split into independent groups, max 3 workers; plan files live in `<repo>/.claude/plans/` (git-excluded by `real-init` and `make-lab`). Ledger is not on the board (user's choice B). Verified: a `--bg --agent implementer` session can use the Agent tool. Not yet run end to end.
 - Still global-config-free: `~/.claude` untouched. Existing labs keep their old `CLAUDE.local.md` until re-copied.
 
 ## Kit map
@@ -111,7 +112,7 @@ Hypotheses to test:
 | Kit file | Source in the docs |
 |---|---|
 | `agents/implementer.md` | one-terminal-orchestrator.md section 2a |
-| `orchestrating.md` (becomes `CLAUDE.local.md` in a lab) | section 2c, plus the queue, quick-task, relay and PR rules from lab-quickstart.md |
+| `orchestrating.md` (becomes `CLAUDE.local.md` in a lab) | section 2c, plus the queue, size, relay and PR rules from lab-quickstart.md |
 | `settings.local.json` (permissions + caveman hook) | section 2d, plus lab-quickstart.md step 2 |
 | `ngisa-settings.json` (NGISA-only edit deny, Flutter fallback; per-repo copy comes from `agent-init`) | lab-quickstart.md step 2 |
 | `~/bin/agent-init`, `make-lab`, `real-init`, `ngisa-guard`, `repo-tab`, `agent-wall.sh`, `agent-pr`, `caveman-ultra-hook`, `gate-check`, `ngisa-report` | lab-quickstart.md step 3 |

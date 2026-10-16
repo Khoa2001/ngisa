@@ -101,13 +101,14 @@ The task text gives the paths you may touch, the stack and the test command. Any
 2. TDD: write the failing test, show it red, make it green. Use the task's test command, else the one in CLAUDE.md or `tool/ci_local.sh`.
 3. `./tool/ci_local.sh` must exit 0 before you stop. Never edit `tool/ci_local.sh`, `tool/setup.sh` or `tool/known_failures.txt`, and never run `--record-baseline`. `./tool/ci_local.sh <test paths>` runs just those tests for quick checks; the full gate must still exit 0 before you stop. A test listed in `tool/known_failures.txt` was already failing before you; leave it. Never skip, delete or loosen tests, lint rules or analyzer config to get green. If setup or the gate cannot run, or fails for a reason outside your task, stop and report the exact error. A red gate in the report is fine; a faked green is not.
 4. Commit on your branch. Never push, never merge, never touch main.
-5. Final message: exactly these six lines, nothing before or after, in caveman ultra (no articles or filler, fragments OK); branch, paths, commands and errors stay exact.
+5. Final message: exactly these seven lines, nothing before or after, in caveman ultra (no articles or filler, fragments OK); branch, paths, commands and errors stay exact.
    branch: <branch name>
    files: <paths changed, comma separated>
    gate: <./tool/ci_local.sh exit code and test count, or the exact error>
    scope: in paths | outside: <paths>
    unverified: <what you could NOT verify and why, or none>
    asks: <decisions you deferred, each with your recommendation, separated by ";", or none>
+   ledger: <path of the plan-mode ledger file, or none>
 Do not edit files outside the task's listed paths. If you must, stop and say so.
 ```
 
@@ -145,8 +146,14 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
 6. Merge task branches that passed the latest gate-check (or that I allowed) into the feature branch locally, run ./tool/ci_local.sh, push the feature branch, open a DRAFT PR.
 7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board), then the PR link if any. Never retype or reword it.
 Ask: when you need a decision, run `ngisa-report ask <slug>` and send only its output, one ask per message, then wait. Never put an ask in prose.
-Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
-  Spawn ONE implementer with exactly those paths, then run gate-check as usual. Anything bigger: say it needs a plan.
+Size: judge every task and say it in one line (`tiny`, `small` or `big`, and why). "quick" from me means tiny.
+  tiny = clear, 1-2 named files or one obvious bug: no brainstorming, no plan. One worker, `mode: direct`, exactly those paths.
+  small = a few files, one concern: a 3-5 line plan in chat, wait for my OK, then `mode: direct` worker(s).
+  big or unclear: brainstorming, writing-plans, plan file at `<repo>/.claude/plans/<slug>.md` (excluded from git), wait for my approval.
+    Split the plan into independent groups (max 3 workers). Each task text starts `mode: plan <absolute plan path>` and names its task numbers.
+    Tasks that depend on each other stay in one worker, in order. The worker runs subagent-driven-development (reviews inside); you add none.
+  borderline (cannot tell): ask me `tiny, small or big?` with `ngisa-report ask` before anything else.
+  Direct-mode tasks start `mode: direct`. A tiny or small task never gets reviewers.
 Relay: when I ask for something extra from a worker (e.g. "have it carve", "fix the lint"), SendMessage it to
   that worker (same session, same branch). For carve: tell it to run /carve; I answer its prompts with `claude attach <name>` (worker panes are read-only).
   After any relay that changes a worker's commits, run gate-check on that branch again before merging.
@@ -355,3 +362,9 @@ If "merge-conflict" and "plan-wrong" dominate on the parallel run, the task spli
 4. One feature through the flow with max 2 parallel implementers. Fix what breaks.
 5. Then 3 parallel, then open a second repo tab.
 6. Agent teams: only for a review or debugging session, to see if it's worth it. Not for code.
+
+### Sizes and plan mode (2026-10-16)
+- Why: the user wants one input (the NGISA) and only to watch, and the review cost should match the task. The NGISA now sizes every task in one line: tiny (no brainstorming, no plan, one worker), small (short plan in chat), big or unclear (brainstorming, writing-plans, approved plan file). A borderline task is asked to the user first.
+- A worker runs `mode: direct` (TDD, gate, no reviewers) or `mode: plan <path>`: `superpowers:subagent-driven-development` on the plan, with a task review after each task and a final branch review. It follows the skill's rulings rule: it decides conflicts itself and writes each as a ruling in its ledger, and stops only for the skill's four cases (destructive, security-sensitive, a side effect outside the worktree, a plan too broken to follow). No merge, push or PR from the worker.
+- The ledger is not on the board; the worker's final report has a `ledger:` line, and the NGISA gives the path only on request.
+- Checked 2026-10-16: a background `--agent implementer` session can dispatch subagents with the Agent tool.

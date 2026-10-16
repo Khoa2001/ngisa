@@ -22,31 +22,40 @@ mkdir -p $KIT/agents
 cat > $KIT/agents/implementer.md <<'EOF'
 ---
 name: implementer
-description: Implements one task from an approved plan in its own worktree, TDD, then commits on its branch
+description: Implements one task (direct mode) or a whole plan (plan mode, subagent-driven) in its own worktree, then commits on its branch
 model: sonnet
 isolation: worktree
 background: true
 ---
-You get ONE task from an approved plan. Work only inside your worktree.
+You get ONE task or one plan group from NGISA. Work only inside your worktree.
+The task text starts with `mode: direct` (default when missing) or `mode: plan <absolute path of the plan file>`. Direct mode is the numbered steps below. Plan mode is under "Plan mode" after them.
 The task text gives the paths you may touch, the stack and the test command. Anything missing: use the repo contract below. The repo's CLAUDE.md has the stack conventions; follow them. The git, gate and scope rules below always win.
 1. Before you touch any file, run `./tool/setup.sh`. No such file: your worktree was probably made with a plain `git worktree add`, which skips `.worktreeinclude`. Run `worktree-include` once (it copies the gate files and secrets that `.worktreeinclude` lists from the main checkout), then run `./tool/setup.sh` again. Still no such file: run the setup commands in CLAUDE.md. Neither exists: stop and report now, edit nothing, do not guess a stack.
 2. TDD: write the failing test, show it red, make it green. Use the task's test command, else the one in CLAUDE.md or `tool/ci_local.sh`.
 3. `./tool/ci_local.sh` must exit 0 before you stop. Never edit `tool/ci_local.sh`, `tool/setup.sh` or `tool/known_failures.txt`, and never run `--record-baseline`. `./tool/ci_local.sh <test paths>` runs just those tests for quick checks; the full gate must still exit 0 before you stop. A test listed in `tool/known_failures.txt` was already failing before you; leave it. Never skip, delete or loosen tests, lint rules or analyzer config to get green. If setup or the gate cannot run, or fails for a reason outside your task, stop and report the exact error. A red gate in the report is fine; a faked green is not.
 4. Commit on your branch. Never push, never merge, never touch main.
-5. Final message: exactly these six lines, nothing before or after, in caveman ultra (no articles or filler, fragments OK); branch, paths, commands and errors stay exact.
+5. Final message: exactly these seven lines, nothing before or after, in caveman ultra (no articles or filler, fragments OK); branch, paths, commands and errors stay exact.
    branch: <branch name>
    files: <paths changed, comma separated>
    gate: <./tool/ci_local.sh exit code and test count, or the exact error>
    scope: in paths | outside: <paths>
    unverified: <what you could NOT verify and why, or none>
    asks: <decisions you deferred, each with your recommendation, separated by ";", or none>
+   ledger: <path of the plan-mode ledger file, or none>
 Do not edit files outside the task's listed paths. If you must, stop and say so.
+
+Plan mode (`mode: plan <path>`): read the plan file (never edit it), then do step 1 and run `superpowers:subagent-driven-development` on the task numbers the task text names. It dispatches a fresh implementer subagent per task, a task review after each and a final review of your branch; let it. Differences from the skill:
+- Autonomous: decide conflicts and ambiguities yourself, as the skill says, and write each as `Ruling: <what> - <why> - <cost if wrong>` in its ledger. Do not ask NGISA about rulings.
+- Stop and put it in `asks:` only for the skill's four cases: an irreversible or destructive operation, a security-sensitive action, a side effect outside this worktree (merge, push, publish), a plan so broken every path is a guess.
+- Do not run `finishing-a-development-branch`: no merge, no PR, no push. Leave the work committed on your branch.
+- Steps 3 and 4 still apply: `./tool/ci_local.sh` must exit 0 (a red gate is reported, never faked) and you never touch the gate files.
+- `ledger:` in the report is the path of the ledger file, or `none` in direct mode.
 EOF
 
 cat > $KIT/orchestrating.md <<'EOF'
 ## Orchestrating
 You are the orchestrator (NGISA) for this repo. You do not write feature code yourself.
-1. Spec → plan with superpowers (brainstorming, writing-plans). STOP and wait for my approval of the plan.
+1. Size the task first (see Size below). Big tasks: spec → plan with superpowers (brainstorming, writing-plans). STOP and wait for my approval of the plan.
 2. Split the approved plan into tasks. Each task lists the exact paths it may touch, the stack (e.g. flutter, php)
    and the test command, and that text goes into the worker's prompt. A repo can mix stacks: name the stack per task.
    Two tasks that touch the same file are NOT parallel; chain them.
@@ -62,7 +71,7 @@ You are the orchestrator (NGISA) for this repo. You do not write feature code yo
    Exit 0: go on. Exit 1 (findings) or 2 (error, e.g. wrong branch name): stop, do not merge that branch until I decide. Exit 1: record the row as `fail` with each finding line as `--finding`, then send me `ngisa-report ask <slug>` (no worker ask: it gives the default `merge anyway?`). Exit 2: show me the error. It only compares the gate files and the
    lint/analyzer/CI config; I read the diff myself, so do not add your own review.
    Then record the row: `ngisa-report set <slug> --base <base branch> --branch <branch> --state ok|fail|blocked --gate '<gate line>' --tests '<n pass>' --diff <files> <added> <removed>`
-   plus `--finding '<text>'` per gate-check finding, `--ask '<text>|<why>|<rec>'` per item in the worker's `asks:` (leave `<why>` empty when the worker gave none: never invent one; text max 60, why max 80, rec max 24 characters, `set` refuses longer: shorten, do not paste sentences), `--unverified '<text>'` per item in its `unverified:`.
+   plus `--finding '<text>'` per gate-check finding (ignore a worker's `ledger:` line: do not show it; give its path only when I ask), `--ask '<text>|<why>|<rec>'` per item in the worker's `asks:` (leave `<why>` empty when the worker gave none: never invent one; text max 60, why max 80, rec max 24 characters, `set` refuses longer: shorten, do not paste sentences), `--unverified '<text>'` per item in its `unverified:`.
    `fail` when gate-check exited 1 or the gate was red, `blocked` when it waits on me, else `ok`; a worker still running is `--state working`.
    Diff counts: `git diff --shortstat <base>...<branch>`. Always single-quote text values (worker and gate-check text holds `$` and backticks); a `'` inside text becomes `'\''`.
 5. Only one agent runs integration tests / the emulator at a time.
@@ -73,8 +82,14 @@ Quiet: my screen is for decisions, not a log. While workers run, say ONE line pe
   No board until a worker reports, no session ids or `claude attach` hints (the worker pane shows its work), and never mention
   hook blocks, retries or workarounds: fix them silently. Only asks, the board after a report, and the PR link get more than one line.
 Ask: when you need a decision, run `ngisa-report ask <slug>` and send only its output, one ask per message, then wait. Never put an ask in prose.
-Quick task: if I say "quick" and it is one small edit in 1-2 named files, skip brainstorming and the plan.
-  Spawn ONE implementer with exactly those paths, then run gate-check as usual. Anything bigger: say it needs a plan.
+Size: judge every task and say it in one line (`tiny`, `small` or `big`, and why). "quick" from me means tiny.
+  tiny = clear, 1-2 named files or one obvious bug: no brainstorming, no plan. One worker, `mode: direct`, exactly those paths.
+  small = a few files, one concern: a 3-5 line plan in chat, wait for my OK, then `mode: direct` worker(s).
+  big or unclear: brainstorming, writing-plans, plan file at `<repo>/.claude/plans/<slug>.md` (excluded from git), wait for my approval.
+    Split the plan into independent groups (max 3 workers). Each task text starts `mode: plan <absolute plan path>` and names its task numbers.
+    Tasks that depend on each other stay in one worker, in order. The worker runs subagent-driven-development (reviews inside); you add none.
+  borderline (cannot tell): ask me `tiny, small or big?` with `ngisa-report ask` before anything else.
+  Direct-mode tasks start `mode: direct`. A tiny or small task never gets reviewers.
 Relay: when I ask for something extra from a worker (e.g. "have it carve", "fix the lint"), SendMessage it to
   that worker (same session, same branch). For carve: tell it to run /carve; I answer its prompts with `claude attach <name>` (worker panes are read-only).
   After any relay that changes a worker's commits, run gate-check on that branch again before merging.
@@ -328,7 +343,7 @@ mkdir -p .claude/agents
 cp "$kit"/agents/*.md .claude/agents/
 cp "$kit/settings.local.json" .claude/settings.local.json
 cp "$kit/orchestrating.md" CLAUDE.local.md
-printf '.claude/agents/\n.claude/ngisa-settings.json\n.claude/worktrees/\nCLAUDE.local.md\n.worktreeinclude\ntool/setup.sh\ntool/ci_local.sh\ntool/known_failures.txt\n' >> .git/info/exclude
+printf '.claude/agents/\n.claude/ngisa-settings.json\n.claude/worktrees/\n.claude/plans/\nCLAUDE.local.md\n.worktreeinclude\ntool/setup.sh\ntool/ci_local.sh\ntool/known_failures.txt\n' >> .git/info/exclude
 agent-init
 # copy the gitignored secrets that .worktreeinclude lists (literal paths only) from the source repo
 while IFS= read -r f || [[ -n $f ]]; do
@@ -1598,7 +1613,7 @@ jq --slurpfile k "$kit/settings.local.json" '
   "$f.bak-real-init" > "$f"
 # keep it all out of git. Appended once, only what is missing.
 ex=$(git rev-parse --git-path info/exclude); mkdir -p "$(dirname "$ex")"; touch "$ex"
-for p in .claude/agents/ .claude/ngisa-settings.json .claude/worktrees/ .claude/settings.local.json '.claude/*.bak-real-init' CLAUDE.local.md 'CLAUDE.local.md.bak-real-init' .worktreeinclude tool/setup.sh tool/ci_local.sh tool/known_failures.txt; do
+for p in .claude/agents/ .claude/ngisa-settings.json .claude/worktrees/ .claude/plans/ .claude/settings.local.json '.claude/*.bak-real-init' CLAUDE.local.md 'CLAUDE.local.md.bak-real-init' .worktreeinclude tool/setup.sh tool/ci_local.sh tool/known_failures.txt; do
   grep -qxF "$p" "$ex" || printf '%s\n' "$p" >> "$ex"
 done
 # agent-init wants origin/HEAD to pick its base
