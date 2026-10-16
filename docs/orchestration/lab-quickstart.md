@@ -377,7 +377,8 @@ cfg="$dir/.claude/ngisa-settings.json"; [[ -f $cfg ]] || cfg="$kit/ngisa-setting
 style='Caveman ultra applies to EVERY message you write to the user: status updates, spawn notices, summaries, questions, report tables. Drop articles (a/an/the), filler, pleasantries, hedging. Fragments OK. Abbreviate (DB, auth, config, req, res, fn). Arrows for causality. Paths, branch names, commands, session ids, quoted errors: exact. Code, commits, PR text, security warnings, irreversible-action confirmations: normal prose. Not: "I have started the implementer worker on this fix. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Gate-check next." Long text too (findings, decisions): numbered fragments, never prose paragraphs. Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes." Reports and asks are templates: paste the output of ngisa-report set (the board) or ngisa-report ask unchanged; do not reword them.'
 # status line + guard hook, merged into a temp copy of the settings (NGISA only).
 # ngisa-guard blocks shell edits of the code dirs and direct test runs; it reads the dirs from NGISA_CODE_DIRS.
-sl=$(command -v ngisa-statusline || true); guard=$(command -v ngisa-guard || true)
+sl=""; [[ -n ${NGISA_ROSTER:-} ]] && sl=$(command -v ngisa-statusline || true);   # the worker roster line is opt-in (NGISA_ROSTER=1)
+ guard=$(command -v ngisa-guard || true)
 if jq -e . "$cfg" >/dev/null 2>&1; then
   export NGISA_CODE_DIRS=$(jq -r '[.permissions.deny[]? | select(startswith("Edit(")) | sub("^Edit\\(";"") | sub("\\)$";"") | select(test("^[A-Za-z0-9_./-]+/\\*\\*$")) | sub("/\\*\\*$";"")] | join(" ")' "$cfg")
   export NGISA_CODE_EXT=$(jq -r '[.permissions.deny[]? | select(startswith("Edit(")) | capture("\\*\\.(?<e>[A-Za-z0-9]+)\\)$").e] | unique | join("|")' "$cfg")
@@ -456,7 +457,7 @@ case ${AGENT_VIEW:-tail} in
   *) viewer=("$(command -v agent-tail)" "$name");;
 esac
 if (( ${#impl[@]} == 0 )); then
-  new=$(wezterm cli split-pane --pane-id "$me" --right --percent 55 -- "${viewer[@]}")
+  new=$(wezterm cli split-pane --pane-id "$me" --right --percent ${AGENT_WALL_WIDTH:-38} -- "${viewer[@]}")
 else
   # first guess at equal heights; equalize_column below fixes what the split leaves uneven
   n=${#impl[@]}
@@ -521,8 +522,9 @@ cat > ~/bin/agent-tail <<'EOF'
 """Live stream of one background worker: what Claude shows (messages, tool calls, results), without the input box or status bar.
 Read only: nothing typed here reaches the worker. To answer a stuck worker: claude attach <name>.
 Reads the session transcript (an internal format) through agent-view's parser. Env: AGENT_VIEW_INTERVAL (seconds, default 1),
-AGENT_VIEW_ONCE=1 (draw once and exit)."""
-import glob, importlib.machinery, importlib.util, os, re, shutil, sys, textwrap, time
+AGENT_VIEW_ONCE=1 (draw once and exit), AGENT_TAIL_DIFF (max diff lines shown per edit, default 14),
+AGENT_TAIL_OUT (max output lines shown per command, default 4)."""
+import difflib, glob, importlib.machinery, importlib.util, os, re, shutil, sys, textwrap, time
 
 _p = os.path.join(os.path.dirname(os.path.realpath(__file__)), "agent-view")
 _l = importlib.machinery.SourceFileLoader("agent_view", _p)
@@ -559,24 +561,54 @@ def head(name, inp, wt):
     return name, one(next((v for v in inp.values() if isinstance(v, str)), ""), 120)
 
 
-def result_line(name, inp, res, text):
+DIFF_MAX = int(os.environ.get("AGENT_TAIL_DIFF", "14"))
+OUT_MAX = int(os.environ.get("AGENT_TAIL_OUT", "4"))
+ADD, DEL = "38;2;76;198;138", "38;2;255;107;95"
+
+
+def diff_lines(old, new, w):
+    """Only the lines that changed (unchanged lines between them are dropped)."""
+    a, b = str(old or "").splitlines(), str(new or "").splitlines()
+    rows = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag != "equal":
+            rows += [(DEL, "- " + l) for l in a[i1:i2]] + [(ADD, "+ " + l) for l in b[j1:j2]]
+    out = [c(col, one(t, w - 6)) for col, t in rows[:DIFF_MAX]]
+    if len(rows) > DIFF_MAX:
+        out.append(dim(f"… +{len(rows) - DIFF_MAX} more changed lines"))
+    return out
+
+
+def result_block(name, inp, res, text, w):
+    """-> (summary, failed, detail lines): the summary after the arrow, then what actually changed or came out."""
     if res is None:
-        return None, False
+        return None, False, []
     failed = bool(res.get("is_error"))
     inp = inp or {}
     if failed:
-        return av.plain_error(text) or "error", True
+        return av.plain_error(text) or "error", True, []
     if name == "Edit":
-        return f"+{nlines(inp.get('new_string'))} −{nlines(inp.get('old_string'))}", False
+        return f"+{nlines(inp.get('new_string'))} −{nlines(inp.get('old_string'))}", False, diff_lines(inp.get("old_string"), inp.get("new_string"), w)
+    if name == "MultiEdit":
+        eds = inp.get("edits") or []
+        det = []
+        for e in eds:
+            det += diff_lines(e.get("old_string"), e.get("new_string"), w)
+        return f"{len(eds)} edits", False, det[:DIFF_MAX + 1]
     if name == "Write":
-        return f"{nlines(inp.get('content'))} lines", False
+        body = str(inp.get("content") or "")
+        return f"{nlines(body)} lines", False, diff_lines("", body, w)
     if name == "Read":
-        return f"{nlines(text)} lines", False
+        return f"{nlines(text)} lines", False, []
     lines = [l for l in text.splitlines() if l.strip()]
     if not lines:
-        return "done", False
-    last = lines[-1] if name == "Bash" else lines[0]
-    return one(last, 300) + (f"  (+{len(lines) - 1} lines)" if len(lines) > 1 else ""), False
+        return "done", False, []
+    shown = lines[-OUT_MAX:] if name == "Bash" else lines[:OUT_MAX]
+    det = [dim(one(l, w - 6)) for l in shown]
+    hidden = len(lines) - len(shown)
+    if hidden > 0:
+        det.insert(0, dim(f"… {hidden} earlier lines")) if name == "Bash" else det.append(dim(f"… +{hidden} lines"))
+    return "", False, det
 
 
 def render(name, w):
@@ -596,15 +628,35 @@ def render(name, w):
             continue
         text = av.result_text(ev["result"])
         title, arg = head(ev["name"], ev["input"], wt)
+        arg = one(str(arg).split("\n")[0], 400) if arg else arg
         out.append(c(PURPLE, "● ") + c("1", title) + (dim("(") + one(arg, w - len(title) - 6) + dim(")") if arg else ""))
-        rl, failed = result_line(ev["name"], ev["input"], ev["result"], text)
-        if rl is None:
+        summary, failed, detail = result_block(ev["name"], ev["input"], ev["result"], text, w)
+        if summary is None:
             out.append(dim("  ⎿ ") + c(DIM, "running…"))
-        else:
-            out.append(dim("  ⎿ ") + (c(RED, one(rl, w - 6)) if failed else dim(one(rl, w - 6))))
+        elif summary or failed:
+            out.append(dim("  ⎿ ") + (c(RED, one(summary, w - 6)) if failed else dim(one(summary, w - 6))))
+            out += ["    " + l for l in detail]
+        elif detail:
+            out += [(dim("  ⎿ ") if i == 0 else "    ") + l for i, l in enumerate(detail)]
         out.append("")
     state = info.get("state") or info.get("status") or ""
     return out, state
+
+
+def frame(lines, name, state, cols, rows):
+    """Double-line border, the session name centred in the top edge (state colour: working teal, needs-you amber, done green)."""
+    code = {"blocked": "38;2;231;164;71", "done": GREEN}.get(state, "38;2;60;196;178")
+    inner = cols - 4
+    label = f" {one(name, max(inner - 8, 8))} "
+    left = (cols - 2 - len(label)) // 2
+    top = "╔" + "═" * left + label + "═" * (cols - 2 - left - len(label)) + "╗"
+    side = c(code, "║")
+    body = []
+    for l in lines[-(rows - 2):] if rows > 2 else []:
+        pad = " " * max(0, inner - av.vis(l))
+        body.append(f"{side} {fit(l, inner)}{pad} {side}")
+    body = [f"{side} {' ' * inner} {side}"] * max(0, rows - 2 - len(body)) + body
+    return [c(code, top)] + body + [c(code, "╚" + "═" * (cols - 2) + "╝")]
 
 
 def main():
@@ -614,14 +666,13 @@ def main():
 
     def paint():
         size = shutil.get_terminal_size((100, 30))
-        lines, state = render(name, max(size.columns, 40))
+        cols, rows = max(size.columns, 30), size.lines - 1
+        lines, state = render(name, cols - 4)
         while lines and not lines[-1]:
             lines.pop()
         if state and state not in ("working", "running", "busy"):
             lines += ["", c(GREEN, "✓ ") + dim(f"session {state}")]
-        lines = lines[-(size.lines - 1):]   # newest at the bottom, like a terminal
-        pad = [""] * max(0, size.lines - 1 - len(lines))
-        sys.stdout.write("\033[H" + "".join(fit(l, size.columns) + "\033[K\n" for l in pad + lines) + "\033[J")
+        sys.stdout.write("\033[H" + "".join(l + "\033[K\n" for l in frame(lines, name, state or "", cols, rows)) + "\033[J")
         sys.stdout.flush()
     if once:
         paint(); return
@@ -1721,7 +1772,7 @@ In the NGISA tab, type something tiny with 2 independent parts, e.g.:
 > Add a `toString()` to `OcrResult` and a unit test for `BoundsSerializer` edge cases. Brainstorm, then plan, then wait for me.
 
 Approve the spec, approve the plan, then say `go`. The NGISA answers in caveman ultra (the hook in `settings.local.json`). You should see:
-- 2 panes open on the right of the NGISA, one per agent. Default view is `agent-tail` (since 2026-10-16): a live stream of the worker's messages, tool calls and one-line results, newest at the bottom, with no input box and no status bar, read-only. `AGENT_VIEW=attach` gives the full `claude attach` pane (input box); `AGENT_VIEW=status` gives the older status-only `agent-view`, which shows only status: the name, `working`, `needs you` or `done` with the time, one dim line (the branch), and one result line (the commit). A worker that has made no move for 2 minutes gets a dim `quiet for Nm` line; a worker that needs you shows the question and `claude attach <name>`; a red line says so if the NGISA never got the worker's result. There is no input box. `AGENT_VIEW_DETAIL=1` brings back the full view (phase strip, counters, a `now` line and a log). The NGISA's status line adds a `workers` roster (`ngisa-statusline`). To answer a worker that shows `needs you`, run `claude attach <name>` in a spare pane. `AGENT_VIEW=attach` makes `agent-wall.sh` open the full `claude attach` pane instead.
+- 2 panes open on the right of the NGISA, one per agent. Default view is `agent-tail` (since 2026-10-16): a live stream of the worker's messages (since the 2026-10-16 follow-up: framed by a double-line border with the session name in the top edge, a real diff of each edit with only the changed lines, the last lines of each command's output, and a narrower pane: `AGENT_WALL_WIDTH`, default 38 percent; `AGENT_TAIL_DIFF` and `AGENT_TAIL_OUT` set how many lines show), tool calls and one-line results, newest at the bottom, with no input box and no status bar, read-only. `AGENT_VIEW=attach` gives the full `claude attach` pane (input box); `AGENT_VIEW=status` gives the older status-only `agent-view`, which shows only status: the name, `working`, `needs you` or `done` with the time, one dim line (the branch), and one result line (the commit). A worker that has made no move for 2 minutes gets a dim `quiet for Nm` line; a worker that needs you shows the question and `claude attach <name>`; a red line says so if the NGISA never got the worker's result. There is no input box. `AGENT_VIEW_DETAIL=1` brings back the full view (phase strip, counters, a `now` line and a log). The NGISA's status line adds a `workers` roster (`ngisa-statusline`). To answer a worker that shows `needs you`, run `claude attach <name>` in a spare pane. `AGENT_VIEW=attach` makes `agent-wall.sh` open the full `claude attach` pane instead.
 - each agent finishes with tests green, then the NGISA says it got a report
 - the NGISA runs `gate-check` on each branch, merges the clean ones into a feature branch, runs `ci_local.sh`, and shows you one table (task | branch | gate-check | tests | unverified items)
 
@@ -1749,7 +1800,7 @@ To open a draft PR from the lab instead, tell the NGISA "open a PR" once the fea
 | `agent-pr: no 'upstream' remote` | the lab was made before this script existed: `git remote add upstream <real-url>` in the lab |
 | NGISA not in caveman | `which caveman-ultra-hook` must print a path; `ls ~/lab/<repo>/.claude/settings.local.json` must have a `hooks` block. The rule also rides in the NGISA's system prompt (`repo-tab` passes `--append-system-prompt`), so restart the NGISA after changing it. Hook and prompt together only make drift rarer; log any drift in the run log |
 | worker pane shows a wrong phase tick (only with `AGENT_VIEW_DETAIL=1`) | the phase strip and gate line are guesses from the transcript (shell commands are classified by pattern); the log under it is the ground truth. `AGENT_VIEW=attach` for the full pane |
-| no `workers` line in the NGISA status line | `which ngisa-statusline` must print a path, and the NGISA must be started with the new `repo-tab`. Only workers started after the NGISA appear |
+| want the `workers` line in the NGISA status line back | it is off by default; start with `NGISA_ROSTER=1 repo-tab <path>`. `which ngisa-statusline` must print a path |
 | worker pane blank or garbled | `agent-view` reads the session transcript under `~/.claude/projects/`, an internal format. Use `AGENT_VIEW=attach` until it is fixed |
 | tweakcc customisations gone | Claude Code auto-updated and the new binary is unpatched. Re-run your tweakcc apply script, restart the NGISA, then `claude daemon stop` between tasks so new workers start from the patched binary. `DISABLE_AUTOUPDATER=1` in your shell profile stops the surprise |
 | implementer says setup or the gate cannot run | `agent-init` guessed the stack wrong, or found none. Edit `tool/setup.sh` and `tool/ci_local.sh` in the lab (and in the real repo) by hand: the repo owns them |
