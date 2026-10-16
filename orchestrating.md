@@ -49,4 +49,4 @@ Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, q
   Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."
   Boards and asks are templates: paste them, do not rewrite them.
 Never: merge to main, push or open a PR without my ask, publish, touch store/remote-config/signing,
-  delete branches with unmerged work.
+  delete branches with unmerged work, or run `git worktree prune`, `git worktree remove` or `claude rm` on a worker's worktree or session while it runs (a worker lost its green fix that way).
