@@ -1,5 +1,7 @@
 # NGISA and implementer report output
 
+> Superseded in part (2026-10-16): the coloured report pane (`ngisa-report view`, the strip in `agent-wall.sh`) was removed after the first real run; the board stays in the chat and asks are length-limited. See `docs/runs/2026-10-16-report-output.md`.
+
 ## Context
 The developer reads every result and has to scan and decide fast. Today the NGISA final report is free text and its caveman style slips on long text (findings, decisions; logged twice in `docs/runs/2026-10-15-pane-view-and-caveman.md`). The implementer's final message is a free list. Goal: fixed, scannable shapes, real colour, drift visible as a deviation. Path: architectural (kit + new script + docs en/vi). Branch: `feat/report-output`, never main.
 
