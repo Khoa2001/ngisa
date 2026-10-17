@@ -35,3 +35,10 @@ The kit files are generated from the docs, so change both together. Every doc ha
 ## runs/
 - `2026-10-15-stack-agnostic-checks.md`: headless checks of the stack-agnostic implementer on a PHP lab and a Flutter lab. Results, fixes, what was not tested.
 - `2026-10-15-readme-gif.md`: how the README GIF was made.
+- `2026-10-16-baseline-protocol.md`: speed parity protocol. Three tasks, run order, stage names, blind diff review, the "equal" rule, run tables.
+- `2026-10-16-baseline-run1.md`: speed parity baseline run 1 (headless proxy). How it differs from the protocol, and the numbers.
+- `2026-10-16-warm-worker-spike.md`: warm worker spike (phase 0). One warm worker, one task (the ColorEx tests).
+- `2026-10-17-baseline-run2.md`: speed parity re-measure with warm workers, no report loop and a Sonnet NGISA (headless proxy). Pair: 2m46s wall against plain Claude's 2m43s: a tie, not shown met.
+- `2026-10-17-baseline-run3-tiny.md`: replacement tiny task (`capitalize()` empty-string fix), plain Claude against the warm NGISA. Same code, same tests; NGISA 2m07s against 1m09s: slower on tiny tasks.
+- `2026-10-17-options-abc-tiny.md`: three ways to speed up a tiny task (plain Claude, inline lane, lean worker). Inline lane ties plain Claude (1m12s against 1m09s), lean worker is within about 20% (1m24s).
+- `2026-10-17-bench-medium-parallel.md`: medium parallel bench (three model test files: NGISA about 40% faster), dependent tasks (slower with two workers, a tie with one), and the large plan-mode bench (about 38% faster), with the problems found while running them.

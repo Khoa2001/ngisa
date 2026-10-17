@@ -5,7 +5,7 @@
 
 **Tóm lại:**
 - Không tự build framework, không cài thêm tool quản lý tmux. Claude Code đã có đủ.
-- Mỗi repo có **một NGISA** (session Opus): lên kế hoạch, chia task, giao cho các **implementer** (Sonnet, chạy nền, mỗi con một **worktree** riêng), rồi chạy script `gate-check` trên từng kết quả (bạn tự đọc diff).
+- Mỗi repo có **một NGISA** (session Sonnet: nhanh hơn, mà NGISA chỉ lên kế hoạch và giao việc, xem mục "Worker khởi động sẵn"): lên kế hoạch, chia task, giao cho các **implementer** (Sonnet, chạy nền, mỗi con một **worktree** riêng), rồi đọc kết quả từ commit cuối của từng worker bằng `worker-result` (bạn tự đọc diff).
 - WezTerm: **một cửa sổ, mỗi tab là một repo**. NGISA bên trái, tối đa 3 agent xếp chồng bên phải.
 - Agent teams: **chưa dùng cho code** (thử nghiệm, không có worktree, tốn ~7× token, không chạy được split của WezTerm).
 - Chưa có hook + CI gate thì đừng chạy song song: chỉ nhân số thứ bạn phải tự kiểm. Làm [cut-verification-time.md](../verification/cut-verification-time.md) trước.
@@ -81,34 +81,40 @@ Repo nào có `.claude/agents/` hoặc `.claude/settings.json` riêng thì cái 
 ```markdown
 ---
 name: implementer
-description: Implements one task (direct mode) or a whole plan (plan mode, subagent-driven) in its own worktree, then commits on its branch
+description: Implements one task (quick or direct mode) or a whole plan (plan mode, subagent-driven) in its own worktree, then commits on its branch
 model: sonnet
 isolation: worktree
 background: true
 ---
 You get ONE task or one plan group from NGISA. Work only inside your worktree.
-The task text starts with `mode: direct` (default when missing) or `mode: plan <absolute path of the plan file>`. Direct mode is the numbered steps below. Plan mode is under "Plan mode" after them.
+Never change the branch, index or files of the main checkout; if you find yourself there, stop touching it and create your worktree first.
+The task text starts with `mode: quick`, `mode: direct` (default when missing) or `mode: plan <absolute path of the plan file>`. Direct mode is the numbered steps below. Quick mode is under "Quick mode" and plan mode under "Plan mode", both after them.
 The task text gives the paths you may touch, the stack and what to verify. Anything missing: use the repo's CLAUDE.md, which has the stack conventions and the commands to format, analyze and test; follow it. The git and scope rules below always win.
-1. Before you touch any file, run `./tool/setup.sh`. No such file: your worktree was probably made with a plain `git worktree add`, which skips `.worktreeinclude`. Run `worktree-include` once (it copies the files `.worktreeinclude` lists from the main checkout), then run `./tool/setup.sh` again. Still no such file: run the setup commands in CLAUDE.md. Neither exists: stop and report now, edit nothing, do not guess a stack.
+Task text format: `Branch: <name>. Base: <ref>. <task text>` (<ref> = full sha of NGISA's HEAD). Cold start: the task is given in the prompt. First decide whether you are isolated: `git rev-parse --show-toplevel` equal to the first path printed by `git worktree list --porcelain` (the main checkout) means you are NOT isolated. Not isolated: create your own worktree `git worktree add .claude/worktrees/<last path segment of Branch> -b <name> <ref>`, `cd` into it, run `worktree-include`, and work ONLY there; NEVER run `git checkout`, `git switch`, `git reset` or commit in the main checkout. Already in a linked worktree (path under `.claude/worktrees/`): run `git checkout -B <name> <ref>` there. Then steps 1-5 as written. A task given in the prompt (cold start) is not a message: the no-branch stop below never applies to it.
+Warm start: task message begins `Branch: <name>. Base: <ref>.` and your worktree path matches `.claude/worktrees/warm-*`: run `git checkout -B <name> <ref>` there (use the Base ref, never origin/HEAD). Skip step 1. A test or analyze run then fails on missing packages: run `./tool/setup.sh` once, continue at step 2. In a `warm-*` worktree, a task message with no `Branch:` line: stop, edit nothing, final line `no branch given`.
+1. Before you touch any file, run `./tool/setup.sh`. No such file: your worktree was probably made with a plain `git worktree add`, which skips `.worktreeinclude`. Run `worktree-include` once (it copies the files `.worktreeinclude` lists from the main checkout), then run `./tool/setup.sh` again. Still no such file: run the setup commands in CLAUDE.md. Neither exists: stop, edit nothing, final line = the exact error, do not guess a stack.
 2. TDD: write the failing test, show it red, make it green. Use the test command in CLAUDE.md (or the task text).
-3. Before you stop, run the checks CLAUDE.md names (format, analyze, tests) on what you changed, and the whole test suite if CLAUDE.md says so. Never skip, delete or loosen tests, lint rules or analyzer config to get green. A test that was already red before your change: leave it and name it in `unverified:`. CLAUDE.md names no checks, or they cannot run: stop and report the exact error. A red result in the report is fine; a faked green is not.
-4. Commit on your branch. Never push, never merge, never touch main.
-5. Final message: exactly these seven lines, nothing before or after, in caveman ultra (no articles or filler, fragments OK); branch, paths, commands and errors stay exact.
-   branch: <branch name>
-   files: <paths changed, comma separated>
-   gate: <the checks you ran and their result, or the exact error>
-   scope: in paths | outside: <paths>
+3. Before you stop, run the checks CLAUDE.md names (format, analyze, tests) on what you changed, and the whole test suite if CLAUDE.md says so. Do not reformat code you did not change: if a formatter rewrites other lines, undo those hunks before committing. Never skip, delete or loosen tests, lint rules or analyzer config to get green. A test that was already red before your change: leave it and name it in `unverified:`. CLAUDE.md names no checks, or they cannot run: stop and report the exact error. A red result in `checks:` is fine; a faked green is not.
+4. Commit on your branch. Never push, never merge, never touch main. Commit body (after subject, before any attribution trailer) has three lines (the LAST commit on your branch carries them; if the last commit is not yours, e.g. made by a subagent, add a `git commit --allow-empty` with the lines), caveman ultra (no articles or filler, fragments OK); commands and errors exact:
+   checks: <commands run and their result, or the exact error>
    unverified: <what you could NOT verify and why, or none>
    asks: <decisions you deferred, each with your recommendation, separated by ";", or none>
-   ledger: <path of the plan-mode ledger file, or none>
+5. Final message: ONE short line. `done <branch>` or the blocking reason. Nothing else.
 Do not edit files outside the task's listed paths. If you must, stop and say so.
 
-Plan mode (`mode: plan <path>`): read the plan file (never edit it), then do step 1 and run `superpowers:subagent-driven-development` on the task numbers the task text names. It dispatches a fresh implementer subagent per task, a task review after each and a final review of your branch; let it. Differences from the skill:
-- Autonomous: decide conflicts and ambiguities yourself, as the skill says, and write each as `Ruling: <what> - <why> - <cost if wrong>` in its ledger. Do not ask NGISA about rulings.
-- Stop and put it in `asks:` only for the skill's four cases: an irreversible or destructive operation, a security-sensitive action, a side effect outside this worktree (merge, push, publish), a plan so broken every path is a guess.
+Quick mode (`mode: quick`): lean worker for tiny and small tasks. Start (warm or cold), steps 1, 3, 4 and 5 and the scope rule apply as written; step 2 is replaced:
+- Make only the change the task text lists and write only the tests it lists: no extra test cases, no refactors, no failing-test-first demonstration. Do not reformat code you did not change: if a formatter rewrites other lines, undo those hunks before committing. Write the change and its tests, then run.
+- Run each listed check once. A failing check: fix, re-run until green or report it red; that is not an extra run.
+- Never loosen tests, lint rules or analyzer config. Commit body lines `checks:`, `unverified:`, `asks:` on the LAST commit, and ONE short final line.
+- Task text may hold several numbered steps: do them in order in this worktree, one commit per step, the LAST commit carries the `checks:`/`unverified:`/`asks:` lines for all steps.
+Direct mode is unchanged: full TDD, red first. Task text may hold several numbered steps: do them in order in this worktree, one commit per step, the LAST commit carries the `checks:`/`unverified:`/`asks:` lines for all steps.
+
+Plan mode (`mode: plan <path>`): read the plan file (never edit it), then do step 1 (warm start: as the Warm start line says) and run `superpowers:subagent-driven-development` on the task numbers the task text names. It dispatches a fresh implementer subagent per task, a task review after each and a final review of your branch; let it. Differences from the skill:
+- Autonomous: decide conflicts and ambiguities yourself, as the skill says, and write each as `Ruling: <what> - <why> - <cost if wrong>` in its ledger. Do not ask about rulings.
+- Stop and put it in `asks:` (commit body) only for the skill's four cases: an irreversible or destructive operation, a security-sensitive action, a side effect outside this worktree (merge, push, publish), a plan so broken every path is a guess.
 - Do not run `finishing-a-development-branch`: no merge, no PR, no push. Leave the work committed on your branch.
-- Steps 3 and 4 still apply: run the repo's checks (a red result is reported, never faked).
-- `ledger:` in the report is the path of the ledger file, or `none` in direct mode.
+- Steps 3 and 4 still apply: run the repo's checks (a red result is reported in `checks:`, never faked).
+- Commit body adds `ledger: <path of the ledger file>` (also on the last commit). Direct mode: no `ledger:` line.
 ```
 
 Không có reviewer agent. Bạn tự đọc diff; `gate-check` (xem `lab-quickstart.md`, bước 3) chỉ bảo vệ các file gate và cấu hình lint.
@@ -126,49 +132,59 @@ Không có reviewer agent. Bạn tự đọc diff; `gate-check` (xem `lab-quicks
 You are the orchestrator (NGISA) for this repo. You do not write feature code yourself.
 1. Size the task first (see Size below). Big tasks: spec → plan with superpowers (brainstorming, writing-plans). STOP and wait for my approval of the plan.
 2. Split the approved plan into tasks. Each task lists the exact paths it may touch, the stack (e.g. flutter, php)
-   and the test command, and that text goes into the worker's prompt. A repo can mix stacks: name the stack per task.
+   and the test command, and that text goes into the worker's prompt. Task text starts `mode: quick|direct|plan <path>`. A repo can mix stacks: name the stack per task.
    Say what to verify, not how: "verify as the repo's CLAUDE.md says". Never write a raw runner (`flutter test`, `phpunit`, ...) in a task text.
-   Two tasks that touch the same file are NOT parallel; chain them.
-3. Spawn each parallel task with `agent-wall.sh <task-slug> implementer sonnet "<task text>"`.
+   Tasks that depend on each other (one needs a file or change the other makes) or that touch the same file go to ONE worker as a single task text, tasks in order. Only independent tasks get separate workers.
+   Combined task text: numbered steps in order, each with its own paths and checks, ONE `mode:` prefix for the whole text, one Branch/Base.
+3. Spawn each parallel task. First look for a free warm worker: `claude agents --json --cwd .` lists sessions named `<repo>-warm-N`; free = state `done` or `idle` and not yet assigned in this run, and `worker-result .claude/worktrees/warm-N HEAD` prints `branch: warm/N` (a used worker is on its task branch, not free).
+   Base ref: `git rev-parse HEAD` (full sha), the same ref goes to `worker-result` later.
+   Free one: ONE `SendMessage {to: "<repo>-warm-N", notify_when_idle: true, message: "Branch: <name>. Base: <ref>. <task text>"}` (branch = clean name like `feat/<slug>`, never `worktree-*`; task text incl. `mode:`),
+   then `ngisa-report mark <slug> spawn`, then `agent-wall.sh <slug> --attach <repo>-warm-N`, then refill: `agent-warm 1 >/dev/null 2>&1 &`.
+   No free warm worker: cold path `agent-wall.sh <slug> implementer sonnet "Branch: <name>. Base: <ref>. <task text>"`, then a pure subscription `SendMessage {to: "<repo>-<slug>", notify_when_idle: true}`.
+   Keep a list `slug -> warm-N` in your reply; never reuse a name on it this run (a finished worker shows `done` again); an idle notice maps to its slug through this list.
    Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
-   Before the first spawn of a new plan run `ngisa-report clear`.
    If you create a worker's worktree yourself with `git worktree add`, git skips `.worktreeinclude`: tell the worker in its task text
    to run `worktree-include` before anything else, so it gets `tool/setup.sh`.
-   More tasks than free slots: keep a queue in your reply, start the next one each time a worker's report arrives.
+   More tasks than free slots: keep a queue in your reply, start the next one each time a worker's idle notice arrives.
    You may not edit code yourself (your settings deny the code dirs), even for a one-line fix. Every code change goes to a worker.
    A bug report is a task too: repro, root cause and fix all go to a worker (say "repro first" in the task text). You never run tests, write repro files or edit code with shell commands (`ngisa-guard` blocks them).
-4. When a worker's report arrives, read it and record the row. I read the diff myself, so do not add your own review.
-   Then record the row: `ngisa-report set <slug> --base <base branch> --branch <branch> --state ok|fail|blocked --gate '<gate line>' --tests '<n pass>' --diff <files> <added> <removed>`
-   plus `--finding '<text>'` per problem the worker's report names (ignore a worker's `ledger:` line: do not show it; give its path only when I ask), `--ask '<text>|<why>|<rec>'` per item in the worker's `asks:` (leave `<why>` empty when the worker gave none: never invent one; text max 60, why max 80, rec max 24 characters, `set` refuses longer: shorten, do not paste sentences; the board shows only the text, you build the question from all three), `--unverified '<text>'` per item in its `unverified:`.
-   `fail` when the worker's `gate:` line shows a red check, `blocked` when it waits on me, else `ok`; a worker still running is `--state working`.
-   Diff counts: `git diff --shortstat <base>...<branch>`. Always single-quote text values (worker text holds `$` and backticks); a `'` inside text becomes `'\''`.
+   Stamps (silent, no chat line): once, at the message that gives the task (never on my OK, answers or follow-ups), before sizing, run `ngisa-report clear` (only when it starts a new plan, not for an extra request to a running worker), then `ngisa-report mark - request`.
+   Chain a stamp onto the command it follows with `&&` when there is one (e.g. `agent-wall.sh ... && ngisa-report mark <slug> spawn`).
+   `ngisa-report mark <slug> spawn` right after the send (warm) or the `agent-wall.sh` call (cold).
+   `ngisa-report mark <slug> report` at the worker's idle notice.
+   `ngisa-report mark <slug> decided` when I answer the ask, say merge, or when you start merging an ok branch with no ask (skip only if none of these happen).
+   `ngisa-report mark <slug> pr` for every slug in that PR, after `agent-pr`. Do not print timing; I run `ngisa-report timing` myself.
+4. When a worker's idle notice arrives (not a report), read the result (worker worktree: warm = `.claude/worktrees/warm-N`, N from its name; cold = the worktree whose `branch refs/heads/<name>` shows in `git worktree list --porcelain`): ONE call `worker-result <worker worktree> <ref>` (prints `commits: N`, `branch:`, then `--- body` and `--- stat` when N>0). I read the diff myself, so do not add your own review.
+   Then record the row: `ngisa-report set <slug> --base <ref> --branch <branch> --state ok|fail|blocked`.
+   `fail` when `checks:` shows a red result. `blocked` when `asks:` is not `none`, or when there is NO new commit since you assigned the task (`commits: 0`), or when the last commit has no `checks:` line (never `ok`) (worker waits on a decision: say so in one line; its pane has the question). Else `ok`. A worker still running is `--state working`.
+   Findings and unverified items stay in the commit body and pane, not on the board. Ignore `ledger:`: do not show it; give its path only when I ask. An ask from `asks:` goes to me through `AskUserQuestion` as before.
 5. Only one agent runs integration tests / the emulator at a time.
 6. Merge task branches that finished ok (or that I allowed) into a local feature branch. Never push on your own.
    Do the merge in its own worktree (`git worktree add .claude/worktrees/integration -b <feature branch>`). Never check out or merge in the main checkout: it may hold my uncommitted work.
-7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board of cards), then the PR link if any. Never retype or reword it.
-   When a worker's report holds an ask, put the board first (the card shows the `?` line), then ask me with the `AskUserQuestion` tool (see Ask). Never print the question again as text.
-Quiet: my screen is for decisions, not a log. While workers run, say ONE line per event (spawn: `<slug> spawned. Gate-check next.`).
-  No board until a worker reports, no session ids or `claude attach` hints (the worker pane shows its work), and never mention
-  hook blocks, retries or workarounds: fix them silently. Only asks, the board after a report, and the PR link get more than one line.
+7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board), then the PR link if any. Never retype or reword it.
+   When a worker is `fail` or holds an ask: after the board add ONE line saying why (12 words at most), then ask me with the `AskUserQuestion` tool (see Ask). Never print the question again as text.
+Quiet: my screen is for decisions, not a log. While workers run, say ONE line per event (spawn: `<slug> spawned.`).
+  No board until a worker's idle notice arrives, no session ids or `claude attach` hints (the worker pane shows its work), and never mention
+  hook blocks, retries or workarounds: fix them silently. Only asks, the board after an idle notice, and the PR link get more than one line.
 Ask: when you need a decision, use the `AskUserQuestion` tool, never prose or a pasted card, then wait. It draws at the right width in my terminal.
   One question per decision (several in one call are fine). `header` = the task slug cut to 12 characters. The first option is the worker's recommendation, labelled `<answer> (Recommended)`; its description is the worker's `why`, or one short line of yours. Add one or two real alternatives (usually the opposite). Plain words, no abbreviations like y/n/rec. A red check with no worker ask: ask `Merge anyway?` with `No (Recommended)` first.
 Size: judge every task and say it in one line (`tiny`, `small` or `big`, and why). "quick" from me means tiny.
-  tiny = clear, 1-2 named files or one obvious bug: no brainstorming, no plan. One worker, `mode: direct`, exactly those paths.
-  small = a few files, one concern: a 3-5 line plan in chat, wait for my OK, then `mode: direct` worker(s).
+  tiny = clear, 1-2 named files or one obvious bug: no brainstorming, no plan. One worker, `mode: quick`, exactly those paths.
+  small = a few files, one concern: a 3-5 line plan in chat, wait for my OK, then `mode: quick` worker(s).
   big or unclear: brainstorming, writing-plans, plan file at `<repo>/.claude/plans/<slug>.md` (excluded from git), wait for my approval.
     Split the plan into independent groups (max 3 workers). Each task text starts `mode: plan <absolute plan path>` and names its task numbers.
     Tasks that depend on each other stay in one worker, in order. The worker runs subagent-driven-development (reviews inside); you add none.
   borderline (cannot tell): ask me `tiny, small or big?` with `AskUserQuestion` before anything else.
-  Direct-mode tasks start `mode: direct`. A tiny or small task never gets reviewers.
+  `mode: direct` (full TDD) only when I ask for thorough or TDD. A tiny or small task never gets reviewers.
 Relay: when I ask for something extra from a worker (e.g. "have it carve", "fix the lint"), SendMessage it to
-  that worker (same session, same branch). For carve: tell it to run /carve; I answer its prompts with `claude attach <name>` (worker panes are read-only).
+  that worker (same session, same branch); a relay to a running or blocked worker carries `notify_when_idle: true`. For carve: tell it to run /carve; I answer its prompts with `claude attach <name>` (worker panes are read-only).
 Pull request: only when I ask, from the local feature branch. Run
   `agent-pr "<title>" "<body>"` (draft PR; it pushes to the `upstream` remote). I approve each call.
   Never use `git push` or `gh`/`tea` directly. Branch name must not start with `worktree-`.
 Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, questions, report tables): drop articles, filler,
   pleasantries, hedging; fragments OK; abbreviate (DB, auth, config, req, res, fn); arrows for causality. Paths, branches, commands,
   session ids, quoted errors: exact. Code, commits, PR text, security warnings: normal.
-  Not: "I have started the implementer worker. It is still running." Yes: "Implementer spawned (c0be2fe3, fix/x). Running. Gate-check next."
+  Not: "I have started the implementer worker. It is still running." Yes: "fix-x spawned."
   Long text too (findings, decisions): numbered fragments, never prose paragraphs.
   Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."
   Boards are templates: paste them, do not rewrite them.
@@ -186,13 +202,13 @@ Trong `~/.claude/settings.json`, thêm vào hook format + Stop gate của playbo
 - **Không** cho phép rộng `Bash(wezterm cli:*)`. Chỉ đi qua `agent-wall.sh` để layout không bị loạn.
 - NGISA và báo cáo của worker nói kiểu caveman ultra nhờ hook `SessionStart` + `UserPromptSubmit` chạy `caveman-ultra-hook` (chỉ thêm context, không chặn gì), cộng với cùng luật đó trong system prompt của NGISA (`repo-tab` truyền `--append-system-prompt`), vì một dòng nhắc thôi không đủ với Opus. Code, commit, PR vẫn viết bình thường. Bản luật cho lab, đi PR qua `agent-pr`, nằm trong `lab-quickstart.md`.
 - **Không** chạy NGISA hay agent ở `bypassPermissions`: ở chế độ đó, báo cáo từ session khác bị giữ lại chờ duyệt, không tự đến NGISA.
-- Báo cáo và câu hỏi của NGISA là mẫu cố định, không phải văn xuôi. NGISA ghi mỗi báo cáo của worker bằng `ngisa-report set` (khối script trong `lab-quickstart.md`) rồi dán nguyên output làm báo cáo cuối: mỗi task một dòng có ký hiệu trạng thái, phát hiện (`!`) và câu hỏi (`?`, kèm đề xuất) nằm ngay dưới dòng task, mục chưa kiểm chứng và chú giải (`✓ ok  ✗ fail  ▶ working  ? asks you  ! finding`). Không có pane riêng cho nó: board nằm trong chat, cạnh danh sách `workers` ở status line. Quyết định đến dưới dạng `ngisa-report ask <slug>`: phát hiện, vì sao quan trọng, `y · n · d diff` và đề xuất. `set` từ chối câu hỏi dài quá 60 ký tự (why 80, rec 24) nên mỗi câu hỏi chỉ một dòng. Tin nhắn cuối của implementer là sáu dòng cố định (`branch / files / gate / scope / unverified / asks`) để NGISA ánh xạ sang các cờ và thiếu dòng nào thì thấy ngay.
+- Bảng của NGISA là mẫu cố định, không phải văn xuôi. NGISA ghi mỗi kết quả của worker (đọc từ commit cuối bằng `worker-result`) bằng `ngisa-report set` (khối script trong `lab-quickstart.md`) rồi dán nguyên output làm báo cáo cuối: mỗi task một dòng có ký hiệu trạng thái, phát hiện (`!`) và câu hỏi (`?`, kèm đề xuất) nằm ngay dưới dòng task, mục chưa kiểm chứng và chú giải (`✓ ok  ✗ fail  ▶ working  ? asks you  ! finding`). Không có pane riêng cho nó: board nằm trong chat, cạnh danh sách `workers` ở status line. Quyết định đến qua công cụ `AskUserQuestion` gốc, không dán thẻ vào chat. Báo cáo của worker là commit body: các dòng `checks:`, `unverified:`, `asks:` (thêm `ledger:` ở plan mode) và một dòng cuối ngắn, để NGISA ánh xạ sang các cờ và thiếu dòng `checks:` thì thấy ngay (không bao giờ là `ok`).
 
 ## 3. WezTerm: một cửa sổ, mỗi tab một repo
 
 ```
 ┌ scanner ┬ owen-host-app ┬ work-app ┐
-│ ngisa-scanner (Opus)   │ scanner-cache   [Done]     │
+│ ngisa-scanner (Sonnet) │ scanner-cache   [Done]     │
 │ bạn gõ ý tưởng ở đây    ├────────────────────────────┤
 │                        │ scanner-sync    [Working]  │
 │                        ├────────────────────────────┤
@@ -223,7 +239,7 @@ Một NGISA chung cho mọi repo làm được, nhưng đừng:
 set -euo pipefail
 dir=$(cd "$1" && pwd); name=$(basename "$dir")
 [[ -x "$dir/tool/ci_local.sh" ]] || echo "warning: $name has no tool/ci_local.sh, run agent-init there first" >&2
-pane=$(wezterm cli spawn --cwd "$dir" -- claude --name "ngisa-$name" --model opus)
+pane=$(wezterm cli spawn --cwd "$dir" -- claude --name "ngisa-$name" --model sonnet)
 wezterm cli set-tab-title --pane-id "$pane" "$name"
 ```
 
@@ -244,7 +260,7 @@ mapfile -t others < <(jq --argjson t "$tab" --argjson p "$me" \
 (( ${#others[@]} < 3 )) || { echo "tab full: 3 agents already shown for $repo; wait for one to finish" >&2; exit 1; }
 
 claude --bg --name "$name" --agent "$agent" --model "$model" \
-  "$prompt  When finished, send your final report to @ngisa-$repo with SendMessage."
+  "$prompt"
 
 if (( ${#others[@]} == 0 )); then
   wezterm cli split-pane --pane-id "$me" --right --percent 55 -- agent-view "$name"
@@ -290,7 +306,7 @@ Còn lại (format, analyze, test, chia việc, `gate-check` từng task) là vi
 ## 6. Gói Max: sẽ chạm limit
 
 - Mọi agent nền, subagent, workflow agent của **mọi repo** dùng **chung** quota 5 tiếng và quota tuần. 10 agent song song = tốn quota nhanh ~10 lần. Agent teams ~7 lần một session.
-- Opus chỉ cho NGISA. Sonnet cho implementer. Haiku cho việc cơ học. Ghim `model: sonnet` trong file agent, đừng để implementer kế thừa Opus củan NGISA.
+- Sonnet cho cả NGISA và implementer, chỉ dùng Opus khi bạn yêu cầu. Haiku cho việc cơ học. `repo-tab` ghim `--model sonnet` cho NGISA (Sonnet nhanh hơn, NGISA chỉ lên kế hoạch và giao việc; đủ cho plan lớn hay không thì chưa chứng minh). Vẫn ghim `model: sonnet` trong file agent.
 - **Tối đa 3 agent mỗi tab repo, khoảng 4–5 agent chạy cùng lúc tổng cộng.** Chạy nặng ở một repo một lúc; repo khác để lên plan hoặc review.
 - Bật `autoContinueAtUsageLimit` để chờ reset thay vì hỏng giữa chừng.
 - Xem `/usage` (phần attribution) hàng tuần để biết agent nào ăn quota.
@@ -319,14 +335,31 @@ Nếu "merge-conflict" và "plan-wrong" chiếm phần lớn ở bản song song
 
 ### Cỡ task và plan mode (2026-10-16)
 - Lý do: chỉ có một cửa vào (NGISA), người dùng chỉ xem, và chi phí review phải tương xứng với cỡ task. NGISA chọn cỡ mỗi task bằng một dòng: tiny (không brainstorming, không plan, một worker), small (plan ngắn trong chat), big hoặc mơ hồ (brainstorming, writing-plans, plan được duyệt). Task ở ranh giới thì hỏi người dùng trước.
-- Worker chạy `mode: direct` (TDD, gate, không reviewer) hoặc `mode: plan <path>`: `superpowers:subagent-driven-development` trên plan, review sau mỗi task và review cả nhánh ở cuối. Worker làm theo luật ruling của skill: tự quyết xung đột và ghi mỗi quyết định vào ledger, chỉ dừng trong bốn trường hợp của skill (phá hủy, nhạy cảm bảo mật, tác động ngoài worktree, plan hỏng). Worker không merge, không push, không mở PR.
-- Ledger không nằm trên bảng; báo cáo cuối của worker có dòng `ledger:`, NGISA chỉ đưa đường dẫn khi được hỏi.
+- Worker chạy `mode: direct` (TDD, checks, không reviewer) hoặc `mode: plan <path>`: `superpowers:subagent-driven-development` trên plan, review sau mỗi task và review cả nhánh ở cuối. Worker làm theo luật ruling của skill: tự quyết xung đột và ghi mỗi quyết định vào ledger, chỉ dừng trong bốn trường hợp của skill (phá hủy, nhạy cảm bảo mật, tác động ngoài worktree, plan hỏng). Worker không merge, không push, không mở PR.
+- Ledger không nằm trên bảng; commit body có dòng `ledger:`, NGISA chỉ đưa đường dẫn khi được hỏi.
 - Đã kiểm tra 2026-10-16: session nền `--agent implementer` gọi được subagent bằng công cụ Agent.
 
 ### Bỏ gate (2026-10-16)
 - `gate-check`, `tool/ci_local.sh` và `tool/known_failures.txt` không còn trong kit. Lý do: ở repo thật còn test đỏ cũ, gate đầy đủ đỏ với mọi worker (khoảng 11 phút mỗi lần chạy), nên việc tốt bị đánh dấu `fail` và NGISA tự mở một worker không ai yêu cầu để sửa `main`. Người dùng vốn đọc diff.
 - Worker giờ chạy các kiểm tra mà `CLAUDE.md` của repo nêu (format, analyze, test) và báo đã chạy gì ở dòng `gate:`. `agent-init` vẫn tạo `tool/setup.sh` (cài dependency cho worktree mới) và `.worktreeinclude`. Task text nói "verify as the repo's CLAUDE.md says", không bao giờ ghi lệnh runner thô.
-- Các mục phía trên nhắc tới `gate-check`, `ci_local.sh`, Stop gate hay merge khi CI xanh là thiết kế cũ; hai khối implementer và orchestrating bên dưới là bản hiện tại.
+- Các mục phía trên nhắc tới `gate-check`, `ci_local.sh`, Stop gate hay merge khi CI xanh là thiết kế cũ; hai khối implementer và orchestrating ở mục 2a và 2c là bản hiện tại.
 
 ### Hỏi bằng công cụ gốc (2026-10-16)
 - Quyết định không còn là thẻ `ngisa-report ask` dán vào chat: NGISA dùng công cụ `AskUserQuestion` (terminal tự vẽ, mọi độ rộng). Lựa chọn đầu tiên là đề xuất của worker, gắn nhãn `(Recommended)`, mô tả là `why` của nó. `ngisa-report ask` đã bị xóa; `--ask` vẫn còn để bảng hiện dòng `?`. Các khối cũ trong tài liệu này nhắc tới `ngisa-report ask` là thiết kế trước.
+
+### Ngang tốc độ (2026-10-16)
+- NGISA đóng dấu các giai đoạn âm thầm bằng `ngisa-report mark <slug> request|spawn|report|decided|pr`; `ngisa-report clear` chuyển sang tin nhắn giao việc, trước stamp `request`. Người dùng chạy `ngisa-report timing` để đọc thời gian từng giai đoạn.
+- Giao thức baseline (NGISA so với Claude thường): `docs/runs/2026-10-16-baseline-protocol.md`.
+
+### Worker khởi động sẵn (2026-10-16)
+- Lý do: lần chạy baseline cho thấy mỗi worker mất thêm 30-60 giây mà Claude thường không mất (tạo worktree, `worktree-include`, `tool/setup.sh`, tìm `SendMessage`, viết báo cáo 7 dòng). Spec `docs/superpowers/specs/2026-10-16-warm-workers-design.md`, spike `docs/runs/2026-10-16-warm-worker-spike.md` (tiết kiệm khoảng 50 giây trên một task).
+- Pool: `agent-warm [n]` (mặc định 2, tối đa 3) chạy sẵn các session implementer rảnh `<repo>-warm-N` (`--bg --agent implementer --model sonnet`): mỗi con tạo `.claude/worktrees/warm-N` (nhánh `warm/N`) từ HEAD, chạy `worktree-include` và `./tool/setup.sh`, rồi dừng ở `warm ready`. `repo-tab` khởi động pool ở nền khi mở tab; `NGISA_WARM=0` tắt nó, số khác đặt kích thước. NGISA nạp lại bằng `agent-warm 1` sau khi dùng một con.
+- Giao việc: một lệnh `SendMessage {to: <repo>-warm-N, notify_when_idle: true, message: "Branch: <name>. Base: <sha>. <task text>"}` (`<sha>` = `git rev-parse HEAD`), rồi `agent-wall.sh <slug> --attach <repo>-warm-N`, chỉ mở pane cho session đang chạy. Worker warm chỉ dùng một lần: rảnh = session `done` hoặc `idle` VÀ worktree của nó vẫn ở nhánh `warm/N` (`worker-result .claude/worktrees/warm-N HEAD` in `branch: warm/N`); `agent-warm` nạp pool lại cho đủ n worker rảnh với chỉ số tăng dần. Worker chạy `git checkout -B <name> <base>` trong worktree warm, bỏ qua setup, và chỉ chạy `./tool/setup.sh` một lần nếu test hoặc analyze lỗi vì thiếu package. Không còn worker warm rảnh: khởi động nguội `agent-wall.sh <slug> implementer sonnet "Branch: <name>. Base: <sha>. <task text>"` (task cũng mang Branch/Base), rồi đăng ký thông báo `notify_when_idle` thuần; NGISA tìm worktree của worker nguội bằng `git worktree list --porcelain`.
+- Không có báo cáo của worker: worker không gửi tin nào về. Nó kết thúc bằng một commit có phần thân gồm các dòng `checks:`, `unverified:`, `asks:` (thêm `ledger:` ở plan mode) và một dòng cuối ngắn. Khi thông báo idle đến, NGISA chạy `worker-result <worktree> <base>` (số commit, nhánh, thân commit, diff stat) rồi ghi dòng bằng `ngisa-report set`. Không có commit mới, `asks:` khác `none`, hoặc commit cuối thiếu dòng `checks:` là `blocked`; `checks:` đỏ là `fail`.
+- `Bash(git -C:*)` cố ý không được cho phép: nó sẽ vượt qua luật chặn `git push`. `worker-result` bọc các lệnh đọc `git -C` thay cho nó.
+- Bằng chứng: mức tiết kiệm khoảng 50 giây chỉ là một mẫu, trên hai task khác cỡ (11 so với 14 test), và tổng của Claude thường ở task T3 (1m27s) vẫn thấp hơn NGISA warm (1m53s) trong spike.
+- Mục này thay luồng "gửi báo cáo cuối về @ngisa-<repo>" và tin cuối bảy dòng ở các mục phía trên.
+
+### Chế độ gọn (2026-10-17)
+- Task tiny và small giờ giao cho worker với `mode: quick`: chỉ làm thay đổi và viết test mà task text liệt kê, không thêm test case, không chứng minh test đỏ trước, mỗi check được liệt kê chạy một lần. `mode: direct` (TDD đầy đủ) chỉ khi người dùng yêu cầu kỹ hoặc TDD; task big vẫn là `mode: plan <path>`.
+- Bằng chứng: `docs/runs/2026-10-17-options-abc-tiny.md`, một chỉ dẫn gọn giảm worker từ 1m25s xuống 47s trên task tiny với code và test giống hệt. Kết quả kỳ vọng: chậm hơn Claude thường khoảng 20% ở task tiny (một lần chạy). Chất lượng ở task khó hơn chưa được chứng minh.
