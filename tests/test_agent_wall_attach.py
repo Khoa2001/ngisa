@@ -88,6 +88,43 @@ class AgentWallAttachTest(unittest.TestCase):
         state = os.path.join(self.env["XDG_CACHE_HOME"], "ngisa", "panes", "demo-warm1")
         self.assertTrue(os.path.exists(state))
 
+    def headless(self):
+        d = os.path.join(self.env["XDG_CACHE_HOME"], "ngisa")
+        os.makedirs(d, exist_ok=True)
+        open(os.path.join(d, "headless"), "w").close()
+        self.env.pop("WEZTERM_PANE", None)
+
+    def test_headless_attach_opens_no_pane(self):
+        self.headless()
+        self.set_agents(["demo-warm1"])
+        r = self.run_cli("s", "--attach", "demo-warm1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.logged("split-pane"), [])
+
+    def test_headless_attach_missing_session_still_exits_1(self):
+        self.headless()
+        r = self.run_cli("s", "--attach", "demo-warm1")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no session demo-warm1", r.stderr)
+
+    def test_headless_cold_start_runs_bg_without_pane(self):
+        self.headless()
+        r = self.run_cli("s", "implementer", "sonnet", "do x")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(self.logged("--bg")), 1)
+        self.assertEqual(self.logged("split-pane"), [])
+
+    def test_attach_twice_does_not_open_a_second_pane(self):
+        self.set_agents(["demo-warm1"])
+        self.set_panes([pane(1), pane(99, top=0)])
+        state = os.path.join(self.env["XDG_CACHE_HOME"], "ngisa", "panes")
+        os.makedirs(state, exist_ok=True)
+        with open(os.path.join(state, "demo-warm1"), "w") as f:
+            f.write("99\n")
+        r = self.run_cli("s", "--attach", "demo-warm1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.logged("split-pane"), [])
+
     def test_attach_missing_session_exits_1(self):
         r = self.run_cli("s", "--attach", "demo-warm1")
         self.assertEqual(r.returncode, 1)
@@ -101,6 +138,32 @@ class AgentWallAttachTest(unittest.TestCase):
         self.assertEqual(len(bg), 1, bg)
         self.assertIn("do x", bg[0])
         self.assertNotIn("SendMessage", bg[0])
+
+    def test_cold_start_quick_is_lean_with_prompt_first(self):
+        r = self.run_cli("s", "implementer", "sonnet", "Branch: b. Base: x. mode: quick. do x")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        line = self.logged("--bg")[0]
+        self.assertTrue(line.endswith("--strict-mcp-config --disable-slash-commands --setting-sources project,local --tools Bash,Edit,Write,Read,Glob,Grep"), line)
+        self.assertLess(line.index("do x"), line.index("--tools"))
+
+    def test_cold_start_plan_mode_is_full(self):
+        r = self.run_cli("s", "implementer", "sonnet", "Branch: b. Base: x. mode: plan /p/plan.md. do x")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        line = self.logged("--bg")[0]
+        for flag in ("--tools", "--setting-sources", "--strict-mcp-config", "--disable-slash-commands"):
+            self.assertNotIn(flag, line)
+
+    def test_cold_start_env_full_profile(self):
+        self.env["AGENT_PROFILE"] = "full"
+        r = self.run_cli("s", "implementer", "sonnet", "Branch: b. Base: x. mode: quick. do x")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("--tools", self.logged("--bg")[0])
+
+    def test_headless_cold_start_is_lean_too(self):
+        self.headless()
+        r = self.run_cli("s", "implementer", "sonnet", "do x")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("--tools", self.logged("--bg")[0])
 
     def test_tab_full_still_refuses(self):
         self.set_panes([pane(1), pane(2, top=0), pane(3, top=20), pane(4, top=40)])

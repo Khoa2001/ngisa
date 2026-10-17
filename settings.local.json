@@ -9,7 +9,9 @@
       "Bash(./tool/setup.sh)",
       "Bash(git status)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)", "Bash(git commit:*)",
       "Bash(git merge:*)", "Bash(git checkout:*)", "Bash(agent-wall.sh:*)", "Bash(worktree-include)", "Bash(ngisa-report:*)",
-      "Bash(claude agents --json:*)", "Bash(git rev-parse HEAD)", "Bash(git worktree list:*)", "Bash(worker-result:*)", "Bash(agent-warm:*)"
+      "Bash(claude agents --json:*)", "Bash(git rev-parse HEAD)", "Bash(git worktree list:*)", "Bash(worker-result:*)", "Bash(agent-warm:*)",
+      "Bash(worker-ctx:*)", "Bash(worker-retire:*)",
+      "Bash(ngisa-start:*)", "Bash(ngisa-spawned:*)", "Bash(ngisa-collect:*)"
     ],
     "deny": [
       "Bash(git push:*)", "Bash(flutter pub publish:*)", "Bash(dart pub publish:*)",

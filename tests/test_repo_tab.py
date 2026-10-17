@@ -89,7 +89,7 @@ class RepoTabTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         warm = self.wait_for("agent-warm")
         self.assertEqual(len(warm), 1, warm)
-        self.assertEqual(warm[0], "agent-warm 2 cwd=" + self.repo)
+        self.assertEqual(warm[0], "agent-warm 1 cwd=" + self.repo)
         spawn = self.logged("spawn")
         self.assertEqual(len(spawn), 1, spawn)
         self.assertIn("--model sonnet", spawn[0])

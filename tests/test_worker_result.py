@@ -45,7 +45,8 @@ class WorkerResultTest(unittest.TestCase):
         lines = r.stdout.splitlines()
         self.assertEqual(lines[0], "commits: 1")
         self.assertEqual(lines[1], "branch: work")
-        self.assertEqual(lines[2], "--- body")
+        self.assertEqual(lines[2], "dirty: no")
+        self.assertEqual(lines[3], "--- body")
         for want in ("checks: analyze ok", "unverified: none", "asks: none"):
             self.assertIn(want, lines)
         self.assertIn("--- stat", lines)
@@ -54,7 +55,16 @@ class WorkerResultTest(unittest.TestCase):
     def test_zero_commits(self):
         r = self.run_cli(self.repo, self.base)
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(r.stdout, "commits: 0\nbranch: work\n")
+        self.assertEqual(r.stdout, "commits: 0\nbranch: work\ndirty: no\n")
+
+    def test_dirty_yes_for_uncommitted_and_untracked(self):
+        self.write("a.txt", "changed\n")
+        r = self.run_cli(self.repo, self.base)
+        self.assertEqual(r.stdout.splitlines()[2], "dirty: yes")
+        self.git("checkout", "--", "a.txt")
+        self.write("new.txt", "x\n")
+        r = self.run_cli(self.repo, self.base)
+        self.assertEqual(r.stdout.splitlines()[2], "dirty: yes")
 
     def test_missing_args_exit_2(self):
         for args in ((), (self.repo,)):
