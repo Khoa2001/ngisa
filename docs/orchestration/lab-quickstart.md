@@ -33,8 +33,9 @@ You get ONE task or one plan group from NGISA. Work only inside your worktree.
 Never change the branch, index or files of the main checkout; if you find yourself there, stop touching it and create your worktree first.
 The task text starts with `mode: quick`, `mode: direct` (default when missing) or `mode: plan <absolute path of the plan file>`. Direct mode is the numbered steps below. Quick mode is under "Quick mode" and plan mode under "Plan mode", both after them.
 The task text gives the paths you may touch, the stack and what to verify. Anything missing: use the repo's CLAUDE.md, which has the stack conventions and the commands to format, analyze and test; follow it. The git and scope rules below always win.
-Task text format: `Branch: <name>. Base: <ref>. <task text>` (<ref> = full sha of NGISA's HEAD). Cold start: the task is given in the prompt. First decide whether you are isolated: `git rev-parse --show-toplevel` equal to the first path printed by `git worktree list --porcelain` (the main checkout) means you are NOT isolated. Not isolated: create your own worktree `git worktree add .claude/worktrees/<last path segment of Branch> -b <name> <ref>`, `cd` into it, run `worktree-include`, and work ONLY there; NEVER run `git checkout`, `git switch`, `git reset` or commit in the main checkout. Already in a linked worktree (path under `.claude/worktrees/`): run `git checkout -B <name> <ref>` there. Then steps 1-5 as written. A task given in the prompt (cold start) is not a message: the no-branch stop below never applies to it.
+Task text format: `Branch: <name>. Base: <ref>. <task text>` (<ref> = full sha of NGISA's HEAD, or the branch name of an earlier task this one depends on). Cold start: the task is given in the prompt. First decide whether you are isolated: `git rev-parse --show-toplevel` equal to the first path printed by `git worktree list --porcelain` (the main checkout) means you are NOT isolated. Not isolated: create your own worktree `git worktree add .claude/worktrees/<last path segment of Branch> -b <name> <ref>`, `cd` into it, run `worktree-include`, and work ONLY there; NEVER run `git checkout`, `git switch`, `git reset` or commit in the main checkout. Already in a linked worktree (path under `.claude/worktrees/`): run `git checkout -B <name> <ref>` there. Then steps 1-5 as written. A task given in the prompt (cold start) is not a message: the no-branch stop below never applies to it.
 Warm start: task message begins `Branch: <name>. Base: <ref>.` and your worktree path matches `.claude/worktrees/warm-*`: run `git checkout -B <name> <ref>` there (use the Base ref, never origin/HEAD). Skip step 1. A test or analyze run then fails on missing packages: run `./tool/setup.sh` once, continue at step 2. In a `warm-*` worktree, a task message with no `Branch:` line: stop, edit nothing, final line `no branch given`.
+A reused worker (it already did an earlier task): start from this Base ref, ignore the earlier task's scope, touch only this task's listed paths.
 1. Before you touch any file, run `./tool/setup.sh`. No such file: your worktree was probably made with a plain `git worktree add`, which skips `.worktreeinclude`. Run `worktree-include` once (it copies the files `.worktreeinclude` lists from the main checkout), then run `./tool/setup.sh` again. Still no such file: run the setup commands in CLAUDE.md. Neither exists: stop, edit nothing, final line = the exact error, do not guess a stack.
 2. TDD: write the failing test, show it red, make it green. Use the test command in CLAUDE.md (or the task text).
 3. Before you stop, run the checks CLAUDE.md names (format, analyze, tests) on what you changed, and the whole test suite if CLAUDE.md says so. Do not reformat code you did not change: if a formatter rewrites other lines, undo those hunks before committing. Never skip, delete or loosen tests, lint rules or analyzer config to get green. A test that was already red before your change: leave it and name it in `unverified:`. CLAUDE.md names no checks, or they cannot run: stop and report the exact error. A red result in `checks:` is fine; a faked green is not.
@@ -50,6 +51,12 @@ Quick mode (`mode: quick`): lean worker for tiny and small tasks. Start (warm or
 - Run each listed check once. A failing check: fix, re-run until green or report it red; that is not an extra run.
 - Never loosen tests, lint rules or analyzer config. Commit body lines `checks:`, `unverified:`, `asks:` on the LAST commit, and ONE short final line.
 - Task text may hold several numbered steps: do them in order in this worktree, one commit per step, the LAST commit carries the `checks:`/`unverified:`/`asks:` lines for all steps.
+Call pattern for quick mode (target 5 to 6 requests; direct mode keeps red first and then uses steps 3 and 4; a multi-step task runs it once per numbered step): fewer requests means fewer tokens, because every request re-reads the whole conversation.
+1) Warm start: ONE Bash call `git checkout -B <name> <ref>` first. Read the files you need only after it, never before (Edit and Write on an existing file need a Read of the checked-out content). The cold start does its isolation and worktree steps first.
+2) ONE turn, parallel Write/Edit calls for all listed files.
+3) ONE Bash call for all listed checks: `log=$(mktemp); rc=0; { <check 1> || rc=1; <check 2> || rc=1; } > "$log" 2>&1; echo "exit=$rc"; tail -n 40 "$log"`. A red result: also run `grep -n -m 20 -E 'FAIL|Error|error:' "$log"`, fix, re-run the chain.
+4) ONE Bash call to commit: `git add` the listed paths, `git commit` with the body lines.
+5) The one-line final message. Plan mode keeps its own procedure.
 Direct mode is unchanged: full TDD, red first. Task text may hold several numbered steps: do them in order in this worktree, one commit per step, the LAST commit carries the `checks:`/`unverified:`/`asks:` lines for all steps.
 
 Plan mode (`mode: plan <path>`): read the plan file (never edit it), then do step 1 (warm start: as the Warm start line says) and run `superpowers:subagent-driven-development` on the task numbers the task text names. It dispatches a fresh implementer subagent per task, a task review after each and a final review of your branch; let it. Differences from the skill:
@@ -64,45 +71,36 @@ cat > $KIT/orchestrating.md <<'EOF'
 ## Orchestrating
 You are the orchestrator (NGISA) for this repo. You do not write feature code yourself.
 1. Size the task first (see Size below). Big tasks: spec → plan with superpowers (brainstorming, writing-plans). STOP and wait for my approval of the plan.
-2. Split the approved plan into tasks. Each task lists the exact paths it may touch, the stack (e.g. flutter, php)
-   and the test command, and that text goes into the worker's prompt. Task text starts `mode: quick|direct|plan <path>`. A repo can mix stacks: name the stack per task.
+2. Split the approved plan into tasks. Each task lists the exact paths it may touch, the stack (e.g. flutter, php) and the test command, and that text goes into the worker's prompt. Task text starts `mode: quick|direct|plan <path>`. A repo can mix stacks: name the stack per task.
    Say what to verify, not how: "verify as the repo's CLAUDE.md says". Never write a raw runner (`flutter test`, `phpunit`, ...) in a task text.
    Tasks that depend on each other (one needs a file or change the other makes) or that touch the same file go to ONE worker as a single task text, tasks in order. Only independent tasks get separate workers.
    Combined task text: numbered steps in order, each with its own paths and checks, ONE `mode:` prefix for the whole text, one Branch/Base.
-3. Spawn each parallel task. First look for a free warm worker: `claude agents --json --cwd .` lists sessions named `<repo>-warm-N`; free = state `done` or `idle` and not yet assigned in this run, and `worker-result .claude/worktrees/warm-N HEAD` prints `branch: warm/N` (a used worker is on its task branch, not free).
-   Base ref: `git rev-parse HEAD` (full sha), the same ref goes to `worker-result` later.
-   Free one: ONE `SendMessage {to: "<repo>-warm-N", notify_when_idle: true, message: "Branch: <name>. Base: <ref>. <task text>"}` (branch = clean name like `feat/<slug>`, never `worktree-*`; task text incl. `mode:`),
-   then `ngisa-report mark <slug> spawn`, then `agent-wall.sh <slug> --attach <repo>-warm-N`, then refill: `agent-warm 1 >/dev/null 2>&1 &`.
-   No free warm worker: cold path `agent-wall.sh <slug> implementer sonnet "Branch: <name>. Base: <ref>. <task text>"`, then a pure subscription `SendMessage {to: "<repo>-<slug>", notify_when_idle: true}`.
-   Keep a list `slug -> warm-N` in your reply; never reuse a name on it this run (a finished worker shows `done` again); an idle notice maps to its slug through this list.
-   Max 3 at once. Never open WezTerm windows, tabs or panes any other way.
-   If you create a worker's worktree yourself with `git worktree add`, git skips `.worktreeinclude`: tell the worker in its task text
-   to run `worktree-include` before anything else, so it gets `tool/setup.sh`.
-   More tasks than free slots: keep a queue in your reply, start the next one each time a worker's idle notice arrives.
-   You may not edit code yourself (your settings deny the code dirs), even for a one-line fix. Every code change goes to a worker.
-   A bug report is a task too: repro, root cause and fix all go to a worker (say "repro first" in the task text). You never run tests, write repro files or edit code with shell commands (`ngisa-guard` blocks them).
-   Stamps (silent, no chat line): once, at the message that gives the task (never on my OK, answers or follow-ups), before sizing, run `ngisa-report clear` (only when it starts a new plan, not for an extra request to a running worker), then `ngisa-report mark - request`.
-   Chain a stamp onto the command it follows with `&&` when there is one (e.g. `agent-wall.sh ... && ngisa-report mark <slug> spawn`).
-   `ngisa-report mark <slug> spawn` right after the send (warm) or the `agent-wall.sh` call (cold).
-   `ngisa-report mark <slug> report` at the worker's idle notice.
-   `ngisa-report mark <slug> decided` when I answer the ask, say merge, or when you start merging an ok branch with no ask (skip only if none of these happen).
-   `ngisa-report mark <slug> pr` for every slug in that PR, after `agent-pr`. Do not print timing; I run `ngisa-report timing` myself.
-4. When a worker's idle notice arrives (not a report), read the result (worker worktree: warm = `.claude/worktrees/warm-N`, N from its name; cold = the worktree whose `branch refs/heads/<name>` shows in `git worktree list --porcelain`): ONE call `worker-result <worker worktree> <ref>` (prints `commits: N`, `branch:`, then `--- body` and `--- stat` when N>0). I read the diff myself, so do not add your own review.
-   Then record the row: `ngisa-report set <slug> --base <ref> --branch <branch> --state ok|fail|blocked`.
-   `fail` when `checks:` shows a red result. `blocked` when `asks:` is not `none`, or when there is NO new commit since you assigned the task (`commits: 0`), or when the last commit has no `checks:` line (never `ok`) (worker waits on a decision: say so in one line; its pane has the question). Else `ok`. A worker still running is `--state working`.
-   Findings and unverified items stay in the commit body and pane, not on the board. Ignore `ledger:`: do not show it; give its path only when I ask. An ask from `asks:` goes to me through `AskUserQuestion` as before.
+   At the message that gives the task, size it in one line first (no tool call). Only one worker task in the whole request, of size `tiny` or `small`, and not a relay or follow-up to a running worker: reply `one task: run it in plain Claude` and stop. No worker, no stamps, no board.
+3. Spawn the parallel tasks. First `ngisa-start --need N` right after sizing, once per request (N = number of quick/direct tasks (max 3); add `--new-plan` for every new request that is not an extra request to a running worker; never on my OK or answers). If fewer than N warm workers are free it starts the missing ones and waits up to 60 s for them: do not start cold meanwhile. In the same turn as `ngisa-start`, run `ToolSearch` `select:SendMessage`. It stamps the request and prints `base: <sha>`, each finished warm worker as `warm-N branch=<b> dirty=<yes|no> ctx=<n>k idle=<n>m tasks=<n>`, and `free: <n>`. Free = state `done` or `idle` and `branch=warm/N` (a used worker is on its task branch).
+   Plan-mode tasks take the cold path and never reuse a worker. Do not count them in N.
+   Reuse a finished worker only when ALL hold: its `dirty=no`; the new task's paths overlap its last task's paths or directory, or the new task depends on it; `ctx` under 100k; `idle` under 55 min; `tasks` under 3. Unknown last paths: not reusable. Not reusable: `worker-retire <repo>-warm-N` (closes pane and session, removes the worktree, keeps the task branch).
+   A task that depends on a worker's earlier task gets `Base:` = that task's branch name, for a reused or a fresh worker.
+   Free or reused worker: ONE `SendMessage {to: "<repo>-warm-N", notify_when_idle: true, message: "Branch: <name>. Base: <base>. <task text>"}` per task, all in one turn (branch = clean name like `feat/<slug>`, never `worktree-*`; task text incl. `mode:`). Then ONE `ngisa-spawned <slug>=<repo>-warm-N ...` (stamps, panes, refill).
+   No free warm worker: cold path `agent-wall.sh <slug> implementer sonnet "Branch: <name>. Base: <base>. <task text>"`, then `ngisa-report mark <slug> spawn` and a pure subscription `SendMessage {to: "<repo>-<slug>", notify_when_idle: true}`.
+   Keep a list `slug -> warm-N` with each worker's task count and last paths in your reply; never give a NEW assignment a name already on it this run (a finished worker shows `done` again and only gets another task through the reuse rule); an idle notice maps to its slug through it.
+   Max 3 at once; more tasks than free slots wait in a queue in your reply, started at each idle notice. Never open WezTerm windows, tabs or panes any other way.
+   If you create a worker's worktree yourself with `git worktree add`, tell the worker in its task text to run `worktree-include` first (git skips `.worktreeinclude`).
+   You may not edit code yourself (your settings deny the code dirs), even for a one-line fix. Every code change goes to a worker. A bug report is a task too: repro, root cause and fix all go to a worker (say "repro first"). You never run tests, write repro files or edit code with shell commands (`ngisa-guard` blocks them).
+   Stamps are silent (no chat line). `ngisa-report mark <slug> decided` when I answer the ask, say merge, or when you start merging an ok branch with no ask. After an ask is answered, an override to `ok`, or a merge: `agent-wall.sh --close <session>` for each pane still open. `ngisa-report mark <slug> pr` for every slug in that PR, after `agent-pr`. Do not print timing; I run `ngisa-report timing` myself.
+4. At a worker's idle notice (not a report): ONE call `ngisa-collect <slug> <session> <base> <branch>`. It prints the `worker-result` (`commits: N`, `branch:`, `dirty:`, `--- body`, `--- stat`), stamps, records the row, prints `state: ok|fail|blocked` and the board, and closes the pane only for `ok`. It already did all that: do not re-run `ngisa-report set` or `agent-wall.sh --close` unless you override a state.
+   `blocked` = no new commit, no `checks:` line (never `ok`), or `asks:` not `none` (the pane has the question: say so in one line). `fail` = a red `checks:`. Else `ok`. Read something else: override with `ngisa-report set <slug> --base <base> --branch <branch> --state ok|fail|blocked`. A worker still running is `--state working`.
+   I read the diff myself, so do not add your own review. Findings and unverified items stay in the commit body and pane, not on the board. Ignore `ledger:`: give its path only when I ask. An ask from `asks:` goes to me through `AskUserQuestion`.
 5. Only one agent runs integration tests / the emulator at a time.
 6. Merge task branches that finished ok (or that I allowed) into a local feature branch. Never push on your own.
    Do the merge in its own worktree (`git worktree add .claude/worktrees/integration -b <feature branch>`). Never check out or merge in the main checkout: it may hold my uncommitted work.
-7. Report to me: paste the output of the last `ngisa-report set` unchanged (the board), then the PR link if any. Never retype or reword it.
+7. Report to me: paste the output of the last `ngisa-report set` or `ngisa-collect` board unchanged, then the PR link if any. Never retype or reword it.
    When a worker is `fail` or holds an ask: after the board add ONE line saying why (12 words at most), then ask me with the `AskUserQuestion` tool (see Ask). Never print the question again as text.
 Quiet: my screen is for decisions, not a log. While workers run, say ONE line per event (spawn: `<slug> spawned.`).
-  No board until a worker's idle notice arrives, no session ids or `claude attach` hints (the worker pane shows its work), and never mention
-  hook blocks, retries or workarounds: fix them silently. Only asks, the board after an idle notice, and the PR link get more than one line.
-Ask: when you need a decision, use the `AskUserQuestion` tool, never prose or a pasted card, then wait. It draws at the right width in my terminal.
+  No board until a worker's idle notice arrives, no session ids or `claude attach` hints, and never mention hook blocks, retries or workarounds: fix them silently. Only asks, the board after an idle notice, and the PR link get more than one line.
+Ask: when you need a decision, use the `AskUserQuestion` tool, never prose or a pasted card, then wait.
   One question per decision (several in one call are fine). `header` = the task slug cut to 12 characters. The first option is the worker's recommendation, labelled `<answer> (Recommended)`; its description is the worker's `why`, or one short line of yours. Add one or two real alternatives (usually the opposite). Plain words, no abbreviations like y/n/rec. A red check with no worker ask: ask `Merge anyway?` with `No (Recommended)` first.
 Size: judge every task and say it in one line (`tiny`, `small` or `big`, and why). "quick" from me means tiny.
-  tiny = clear, 1-2 named files or one obvious bug: no brainstorming, no plan. One worker, `mode: quick`, exactly those paths.
+  tiny = clear, 1-2 named files or one obvious bug: no brainstorming, no plan. One worker, `mode: quick`, exactly those paths (alone in the request: see step 2).
   small = a few files, one concern: a 3-5 line plan in chat, wait for my OK, then `mode: quick` worker(s).
   big or unclear: brainstorming, writing-plans, plan file at `<repo>/.claude/plans/<slug>.md` (excluded from git), wait for my approval.
     Split the plan into independent groups (max 3 workers). Each task text starts `mode: plan <absolute plan path>` and names its task numbers.
@@ -110,19 +108,20 @@ Size: judge every task and say it in one line (`tiny`, `small` or `big`, and why
   borderline (cannot tell): ask me `tiny, small or big?` with `AskUserQuestion` before anything else.
   `mode: direct` (full TDD) only when I ask for thorough or TDD. A tiny or small task never gets reviewers.
 Relay: when I ask for something extra from a worker (e.g. "have it carve", "fix the lint"), SendMessage it to
-  that worker (same session, same branch); a relay to a running or blocked worker carries `notify_when_idle: true`. For carve: tell it to run /carve; I answer its prompts with `claude attach <name>` (worker panes are read-only).
-Pull request: only when I ask, from the local feature branch. Run
-  `agent-pr "<title>" "<body>"` (draft PR; it pushes to the `upstream` remote). I approve each call.
+  that worker (same session, same branch); a relay to a running or blocked worker carries `notify_when_idle: true`. For carve: lean workers have no skills, so tell me to run /carve myself in that worker's worktree.
+Pull request: only when I ask, from the local feature branch: `agent-pr "<title>" "<body>"` (draft PR; it pushes to the `upstream` remote). I approve each call.
   Never use `git push` or `gh`/`tea` directly. Branch name must not start with `worktree-`.
 Style: caveman ultra in EVERY message to me (status, spawn notices, summaries, questions, report tables): drop articles, filler,
   pleasantries, hedging; fragments OK; abbreviate (DB, auth, config, req, res, fn); arrows for causality. Paths, branches, commands,
   session ids, quoted errors: exact. Code, commits, PR text, security warnings: normal.
   Not: "I have started the implementer worker. It is still running." Yes: "fix-x spawned."
-  Long text too (findings, decisions): numbered fragments, never prose paragraphs.
-  Not: "Because every birthdate is the 1st, the age step never runs." Yes: "1. All birthdates 1st -> dart:45-47 never runs. Add test? Rec yes."
-  Boards are templates: paste them, do not rewrite them.
+  Long text too (findings, decisions): numbered fragments, never prose paragraphs. Boards are templates: paste them, do not rewrite them.
 Never: merge to main, push or open a PR without my ask, publish, touch store/remote-config/signing,
-  delete branches with unmerged work, or run `git worktree prune`, `git worktree remove` or `claude rm` on a worker's worktree or session while it runs (a worker lost its green fix that way).
+  delete branches with unmerged work, or run `git worktree prune`, `git worktree remove`, `claude stop` or `claude rm` yourself; end a worker only with `worker-retire`, only when it is `done` or `idle` (a worker lost its green fix that way).
+  Optional, once per worker: a worker over 100k that holds clearly useful context: ask me with `AskUserQuestion` whether to `claude attach` and `/compact` it or retire it. Default retire, no question.
+
+# Compact instructions
+When compacting, keep: the `slug -> warm-N` list with each worker's task count and last paths, the base refs, the last board, my decisions, open asks. If the list is lost, rebuild it from `claude agents --json`, `git worktree list --porcelain` and `worker-ctx`; unknown last paths mean: not reusable.
 EOF
 
 cat > $KIT/settings.local.json <<'EOF'
@@ -137,7 +136,9 @@ cat > $KIT/settings.local.json <<'EOF'
       "Bash(./tool/setup.sh)",
       "Bash(git status)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)", "Bash(git commit:*)",
       "Bash(git merge:*)", "Bash(git checkout:*)", "Bash(agent-wall.sh:*)", "Bash(worktree-include)", "Bash(ngisa-report:*)",
-      "Bash(claude agents --json:*)", "Bash(git rev-parse HEAD)", "Bash(git worktree list:*)", "Bash(worker-result:*)", "Bash(agent-warm:*)"
+      "Bash(claude agents --json:*)", "Bash(git rev-parse HEAD)", "Bash(git worktree list:*)", "Bash(worker-result:*)", "Bash(agent-warm:*)",
+      "Bash(worker-ctx:*)", "Bash(worker-retire:*)",
+      "Bash(ngisa-start:*)", "Bash(ngisa-spawned:*)", "Bash(ngisa-collect:*)"
     ],
     "deny": [
       "Bash(git push:*)", "Bash(flutter pub publish:*)", "Bash(dart pub publish:*)",
@@ -332,9 +333,9 @@ if jq -e . "$cfg" >/dev/null 2>&1; then
      + (if $g != "" then {hooks: {PreToolUse: [{matcher: "Bash", hooks: [{type: "command", command: $g}]}]}} else {} end)' "$cfg" > "$tmpcfg" && cfg=$tmpcfg
 fi
 args=(--name "ngisa-$name" --model sonnet --settings "$cfg" --append-system-prompt "$style")
-# warm pool: pre-start idle implementer sessions in the background (NGISA_WARM=0 disables, default 2); never blocks or fails repo-tab
-if [[ ${NGISA_WARM:-2} != 0 ]] && command -v agent-warm >/dev/null 2>&1; then
-  ( cd "$dir" && agent-warm "${NGISA_WARM:-2}" >/dev/null 2>&1 & ) || true
+# warm pool: pre-start idle implementer sessions in the background (NGISA_WARM=0 disables, default 1); never blocks or fails repo-tab
+if [[ ${NGISA_WARM:-1} != 0 ]] && command -v agent-warm >/dev/null 2>&1; then
+  ( cd "$dir" && agent-warm "${NGISA_WARM:-1}" >/dev/null 2>&1 & ) || true
 fi
 # run from a tab that is a lone shell pane: become the NGISA right here, so no blank shell tab is left behind.
 # Otherwise (several panes, or not in WezTerm) open a new tab.
@@ -353,11 +354,26 @@ cat > ~/bin/agent-wall.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 # cold start: agent-wall.sh <slug> <agent> <model> "<prompt>"; warm worker: agent-wall.sh <slug> --attach <session-name>
+# close a worker's pane (the session keeps running): agent-wall.sh --close <session-name>
+if [[ ${1:-} == --close ]]; then
+  [[ -n ${2:-} ]] || { echo "usage: agent-wall.sh --close <session-name>" >&2; exit 2; }
+  [[ $2 =~ ^[A-Za-z0-9._-]+$ && $2 != *..* ]] || { echo "agent-wall.sh: bad session name: $2" >&2; exit 2; }
+  pf="${XDG_CACHE_HOME:-$HOME/.cache}/ngisa/panes/$2"
+  if [[ -f $pf ]]; then
+    id=$(cat "$pf")
+    [[ $id =~ ^[0-9]+$ ]] && wezterm cli kill-pane --pane-id "$id" >/dev/null 2>&1 || true
+    rm -f "$pf"
+  fi
+  exit 0
+fi
 attach=0
+# lean worker profile (no MCP, no skills, no user settings, six tools) except for plan mode, which needs skills and subagents
+flags=(--strict-mcp-config --disable-slash-commands --setting-sources project,local --tools "Bash,Edit,Write,Read,Glob,Grep")
 if [[ ${2:-} == --attach ]]; then
   attach=1 task=$1 session=${3:?usage: agent-wall.sh <slug> --attach <session-name>}
 else
   task=$1 agent=$2 model=$3 prompt=$4
+  if [[ ${AGENT_PROFILE:-} == full || $prompt == *"mode: plan"* ]]; then flags=(); fi
 fi
 repo=$(basename "$(git rev-parse --show-toplevel)")
 if (( attach )); then
@@ -366,6 +382,11 @@ if (( attach )); then
     || { echo "agent-wall.sh: no session $name" >&2; exit 1; }
 else
   name="$repo-$task"
+fi
+# headless (benchmarks, no WezTerm): the marker file turns pane handling off; sessions still start and are checked
+if [[ -f "${XDG_CACHE_HOME:-$HOME/.cache}/ngisa/headless" ]]; then
+  (( attach )) || claude --bg --name "$name" --agent "$agent" --model "$model" "$prompt" ${flags[@]+"${flags[@]}"}
+  exit 0
 fi
 me=${WEZTERM_PANE:?run from inside WezTerm}
 json=$(wezterm cli list --format json)
@@ -403,13 +424,15 @@ equalize_column() {
 }
 alive() { local id; for id in ${others[@]+"${others[@]}"}; do [[ $id == "$1" ]] && return 0; done; return 1; }
 for f in "$state/$repo"-*; do [[ -f $f ]] && ! alive "$(cat "$f")" && rm -f "$f"; done
+# attach twice to the same session: the pane is already there, open nothing
+if (( attach )) && [[ -f "$state/$name" ]] && alive "$(cat "$state/$name")"; then exit 0; fi
 # the right-hand column holds the worker panes, one per agent
 impl=(${others[@]+"${others[@]}"})
 if (( ${#impl[@]} >= 3 )); then
   echo "tab full: 3 agents already shown for $repo" >&2; exit 1
 fi
 if (( ! attach )); then
-  claude --bg --name "$name" --agent "$agent" --model "$model" "$prompt"
+  claude --bg --name "$name" --agent "$agent" --model "$model" "$prompt" ${flags[@]+"${flags[@]}"}
 fi
 # worker panes: `claude attach` by default (the full session view with its input box, so you can watch and type);
 # AGENT_VIEW=tail gives agent-tail (read-only live stream in a frame, no input box);
@@ -438,7 +461,10 @@ n=${1:-2}
 [[ $n =~ ^[0-9]+$ ]] && ((10#$n >= 1)) || { echo "agent-warm: n must be 1..3" >&2; exit 2; }
 n=$((10#$n))
 ((n > 3)) && n=3
-top=$(git rev-parse --show-toplevel) || exit 1
+top=$(git worktree list --porcelain 2>/dev/null | awk 'NR==1 {print substr($0,10)}' || true)
+[[ -n $top ]] || exit 1
+# always work from the main checkout, also when called from a linked worktree (the NGISA may stand in its integration worktree)
+cd "$top" || exit 1
 repo=$(basename "$top")
 command -v jq >/dev/null || { echo "agent-warm: jq is required" >&2; exit 1; }
 # one refill at a time per repo: mkdir lock in the common git dir (shared by all worktrees)
@@ -457,11 +483,11 @@ until mkdir "$lock" 2>/dev/null; do
   sleep 0.2
 done
 trap 'rmdir "$lock" 2>/dev/null || true' EXIT
-json=$(claude agents --json --all --cwd "$PWD")
+json=$(claude agents --json --all --cwd "$top")
 rows=$(jq -r 'if type == "array" then .[] | "\(.name // "")\t\(.state // "")" else error("not an array") end' <<<"$json" 2>/dev/null) \
   && [[ -n $json ]] || { echo "agent-warm: cannot read agent list" >&2; exit 1; }
-# a warm worker is single-use: free = state done/idle AND its worktree still on branch warm/N
-max=0 free=0
+# free = state done/idle AND its worktree still on branch warm/N; pending = a worker still warming up (state working, no worktree yet or still on warm/N)
+max=0 free=0 pending=0
 while IFS=$'\t' read -r name state; do
   [[ $name == "$repo-warm-"* ]] || continue
   idx=${name#"$repo-warm-"}
@@ -471,17 +497,32 @@ while IFS=$'\t' read -r name state; do
   if [[ $state == done || $state == idle ]]; then
     br=$(git -C "$top/.claude/worktrees/warm-$idx" branch --show-current 2>/dev/null || true)
     [[ $br == "warm/$idx" ]] && free=$((free + 1))
+  elif [[ $state == working ]]; then
+    wt="$top/.claude/worktrees/warm-$idx"
+    if [[ ! -d $wt ]]; then pending=$((pending + 1))
+    else
+      br=$(git -C "$wt" branch --show-current 2>/dev/null || true)
+      [[ $br == "warm/$idx" ]] && pending=$((pending + 1))
+    fi
   fi
 done <<<"$rows"
+# a retired worker (claude rm) leaves the list: keep the highest index ever used in the git common dir so an index is never reused
+last=$(cat "$common/agent-warm.last" 2>/dev/null || true)
+[[ $last =~ ^[0-9]+$ ]] && ((10#$last > max)) && max=$((10#$last))
 echo "warm free: $free"
-start=$((n - free))
-((start > 3 - free)) && start=$((3 - free))
+echo "warm pending: $pending"
+start=$((n - free - pending))
+((start < 0)) && start=0
+((start > 3 - free - pending)) && start=$((3 - free - pending))
+((start < 0)) && start=0
 for ((k = 0; k < start; k++)); do
   max=$((max + 1))
   i=$max
+  echo "$i" > "$common/agent-warm.last"
   name="$repo-warm-$i"
   prompt="WARM-UP, no task yet. Do exactly this and nothing else: 1) from the repo root: if .claude/worktrees/warm-$i or branch warm/$i already exists, STOP with the single line: warm path taken. Otherwise run: git worktree add .claude/worktrees/warm-$i -b warm/$i HEAD. 2) cd into .claude/worktrees/warm-$i, run worktree-include, then ./tool/setup.sh. 3) End your turn with the single line: warm ready. Later a task arrives as a message that begins \"Branch: <name>. Base: <ref>.\". When it does: work only in .claude/worktrees/warm-$i, run git checkout -B <name> <ref> there, skip setup, follow the usual implementer rules, and end with a commit whose body has checks:, unverified: and asks: lines, then one short final line. Never send a report with SendMessage."
-  claude --bg --name "$name" --agent implementer --model sonnet "$prompt" >/dev/null
+  # lean worker profile: no MCP, no skills, no user settings, only the tools a quick/direct task uses (the prompt must come before --tools)
+  claude --bg --name "$name" --agent implementer --model sonnet "$prompt" --strict-mcp-config --disable-slash-commands --setting-sources project,local --tools "Bash,Edit,Write,Read,Glob,Grep" >/dev/null
   echo "warm $name started"
 done
 EOF
@@ -504,12 +545,254 @@ fi
 n=$(git -C "$1" rev-list --count "$2..HEAD")
 echo "commits: $n"
 echo "branch: $(git -C "$1" branch --show-current)"
+if [ -n "$(git -C "$1" status --porcelain)" ]; then echo "dirty: yes"; else echo "dirty: no"; fi
 if [ "$n" -gt 0 ]; then
   echo "--- body"
   git -C "$1" log -1 --format=%B
   echo "--- stat"
   git -C "$1" diff --no-ext-diff --no-textconv --stat "$2" HEAD
 fi
+EOF
+
+cat > ~/bin/worker-ctx <<'EOF'
+#!/usr/bin/env bash
+# worker-ctx <session-name>: context size, idle minutes and task count of a background worker, read from its transcript.
+set -euo pipefail
+name=${1:-}
+[[ -n $name ]] || { echo "usage: worker-ctx <session-name>" >&2; exit 2; }
+command -v jq >/dev/null || { echo "worker-ctx: jq is required" >&2; exit 1; }
+sid=$(claude agents --json --all --cwd "$PWD" 2>/dev/null | jq -r --arg n "$name" '[.[] | select(.name == $n)][0].sessionId // empty') || sid=
+[[ -n $sid ]] || { echo "worker-ctx: no session $name" >&2; exit 1; }
+root=${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}
+file=$(ls "$root"/*/"$sid".jsonl 2>/dev/null | head -1 || true)
+[[ -n $file ]] || { echo "worker-ctx: no transcript for $name ($sid)" >&2; exit 1; }
+python3 -I - "$file" <<'PY'
+import datetime, json, os, re, sys
+
+path = sys.argv[1]
+
+
+def parse(ts):
+    ts = re.sub(r"\.\d+", "", ts).replace("Z", "+00:00")
+    return datetime.datetime.fromisoformat(ts)
+
+
+TASK = re.compile(r"(?:Another Claude session sent a message:\s*<cross-session-message[^>]*>\s*)?Branch:")
+now_env = os.environ.get("WORKER_CTX_NOW")
+now = parse(now_env) if now_env else datetime.datetime.now(datetime.timezone.utc)
+ctx = 0
+last = None
+tasks = 0
+for line in open(path):
+    try:
+        d = json.loads(line)
+    except ValueError:
+        continue
+    msg = d.get("message") if isinstance(d.get("message"), dict) else {}
+    if d.get("type") == "assistant" and not d.get("isSidechain") and msg.get("model") != "<synthetic>":
+        u = msg.get("usage")
+        if u:
+            total = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+                     + u.get("cache_creation_input_tokens", 0))
+            if total > 0:
+                ctx = total
+                if d.get("timestamp"):
+                    last = parse(d["timestamp"])
+    elif d.get("type") == "user":
+        c = msg.get("content")
+        if isinstance(c, list):
+            c = "".join(p.get("text", "") for p in c if isinstance(p, dict))
+        # a task sent with SendMessage arrives wrapped in a cross-session-message tag
+        if isinstance(c, str) and TASK.match(c):
+            tasks += 1
+if last is None:
+    last = datetime.datetime.fromtimestamp(os.path.getmtime(path), datetime.timezone.utc)
+idle = max(0, int((now - last).total_seconds() // 60))
+print(f"ctx: {ctx // 1000}k")
+print(f"idle: {idle}m")
+print(f"tasks: {tasks}")
+PY
+EOF
+
+cat > ~/bin/worker-retire <<'EOF'
+#!/usr/bin/env bash
+# worker-retire <session-name>: end a finished warm worker. Removes its worktree, never its task branch.
+set -euo pipefail
+name=${1:-}
+[[ -n $name ]] || { echo "usage: worker-retire <session-name>" >&2; exit 2; }
+command -v jq >/dev/null || { echo "worker-retire: jq is required" >&2; exit 1; }
+top=$(git worktree list --porcelain | awk 'NR==1 {print $2}')
+[[ -n $top ]] || { echo "worker-retire: not in a git repo" >&2; exit 1; }
+repo=$(basename "$top")
+[[ $name =~ ^"$repo"-warm-([0-9]+)$ ]] || { echo "worker-retire: not a warm worker: $name" >&2; exit 2; }
+idx=$((10#${BASH_REMATCH[1]}))
+row=$(claude agents --json --all --cwd "$top" 2>/dev/null | jq -r --arg n "$name" '[.[] | select(.name == $n)][0] | if . == null then empty else "\(.id // "")\t\(.state // "")" end') || row=
+[[ -n $row ]] || { echo "worker-retire: no session $name" >&2; exit 1; }
+id=${row%%$'\t'*}
+state=${row#*$'\t'}
+[[ $state == done || $state == idle ]] || { echo "worker-retire: $name is ${state:-unknown}" >&2; exit 1; }
+wt="$top/.claude/worktrees/warm-$idx"
+if [[ -d $wt ]]; then
+  git -C "$wt" symbolic-ref -q HEAD >/dev/null || { echo "worker-retire: detached HEAD, commits could be lost" >&2; exit 1; }
+  [[ -z $(git -C "$wt" status --porcelain) ]] || { echo "worker-retire: dirty worktree" >&2; exit 1; }
+fi
+[[ -n $id ]] || { echo "worker-retire: no id for $name" >&2; exit 1; }
+claude stop "$id" >/dev/null 2>&1 || true
+claude rm "$id" >/dev/null 2>&1 || true
+if [[ -d $wt ]]; then
+  git -C "$top" worktree remove "$wt" >/dev/null
+fi
+git -C "$top" branch -d "warm/$idx" >/dev/null 2>&1 || true
+agent-wall.sh --close "$name" >/dev/null 2>&1 || true
+echo "retired $name"
+EOF
+
+cat > ~/bin/ngisa-start <<'EOF'
+#!/usr/bin/env bash
+# ngisa-start [--new-plan] [--need N]: one call at the start of a request. Stamps the request, prints the base sha and the finished warm workers.
+# --need N: when fewer than N warm workers are free, start the missing ones (agent-warm N) and wait here (up to NGISA_START_WAIT s, default 60) until they are ready.
+set -uo pipefail
+command -v jq >/dev/null || { echo "ngisa-start: jq is required" >&2; exit 1; }
+new_plan=0 need=0
+while (( $# )); do
+  case $1 in
+    --new-plan) new_plan=1; shift;;
+    --need) [[ ${2:-} =~ ^[0-9]+$ ]] || { echo "usage: ngisa-start [--new-plan] [--need N]" >&2; exit 2; }
+            need=$((10#$2)); (( need > 3 )) && need=3; shift 2;;
+    *) echo "usage: ngisa-start [--new-plan] [--need N]" >&2; exit 2;;
+  esac
+done
+top=$(git worktree list --porcelain | awk 'NR==1 {print substr($0,10)}')
+[[ -n $top ]] || { echo "ngisa-start: not in a git repo" >&2; exit 1; }
+repo=$(basename "$top")
+cd "$top" || exit 1
+if (( new_plan )); then ngisa-report clear >/dev/null 2>&1 || echo "ngisa-start: clear failed" >&2; fi
+ngisa-report mark - request >/dev/null 2>&1 || echo "ngisa-start: stamp failed" >&2
+echo "base: $(git rev-parse HEAD)"
+out="" free=0
+scan() {
+  out="" free=0
+  local name idx wt res branch dirty ctx c i t
+  while IFS= read -r name; do
+    [[ $name =~ ^"$repo"-warm-([0-9]+)$ ]] || continue
+    idx=${BASH_REMATCH[1]}
+    wt="$top/.claude/worktrees/warm-$idx"
+    res=$(worker-result "$wt" HEAD 2>/dev/null || true)
+    branch=$(sed -n 's/^branch: //p' <<<"$res" | head -1)
+    dirty=$(sed -n 's/^dirty: //p' <<<"$res" | head -1)
+    ctx=$(worker-ctx "$name" 2>/dev/null || true)
+    c=$(sed -n 's/^ctx: //p' <<<"$ctx"); i=$(sed -n 's/^idle: //p' <<<"$ctx"); t=$(sed -n 's/^tasks: //p' <<<"$ctx")
+    out+="warm-$idx branch=${branch:--} dirty=${dirty:--} ctx=${c:--} idle=${i:--} tasks=${t:--}"$'\n'
+    [[ $branch == "warm/$idx" ]] && free=$((free + 1))
+  done < <(claude agents --json --all --cwd "$top" 2>/dev/null | jq -r '.[] | select(.state == "done" or .state == "idle") | .name // empty' 2>/dev/null)
+}
+scan
+waited=""
+if (( need > 0 && free < need )); then
+  (agent-warm "$need" >/dev/null 2>&1 </dev/null &)
+  limit=${NGISA_START_WAIT:-60}; poll=${NGISA_START_POLL:-3}
+  [[ $limit =~ ^[0-9]+$ ]] || limit=60
+  start=$SECONDS
+  while (( SECONDS - start < limit )); do
+    sleep "$poll"
+    scan
+    (( free >= need )) && break
+  done
+  waited="waited: $(( SECONDS - start < limit ? SECONDS - start : limit ))s"
+fi
+printf '%s' "$out"
+echo "free: $free"
+[[ -n $waited ]] && echo "$waited"
+exit 0
+EOF
+
+cat > ~/bin/ngisa-spawned <<'EOF'
+#!/usr/bin/env bash
+# ngisa-spawned <slug>=<session> ...: after the SendMessages. Stamps each spawn, opens each pane, refills the warm pool once.
+set -uo pipefail
+(( $# >= 1 )) || { echo "usage: ngisa-spawned <slug>=<session> ..." >&2; exit 2; }
+for a in "$@"; do [[ $a == ?*=?* ]] || { echo "usage: ngisa-spawned <slug>=<session> ..." >&2; exit 2; }; done
+top=$(git worktree list --porcelain 2>/dev/null | awk 'NR==1 {print substr($0,10)}')
+[[ -n $top ]] && cd "$top"
+fails=0
+for a in "$@"; do
+  slug=${a%%=*} session=${a#*=}
+  ngisa-report mark "$slug" spawn >/dev/null 2>&1 || { echo "FAIL $slug stamp"; fails=$((fails + 1)); }
+  if agent-wall.sh "$slug" --attach "$session" >/dev/null 2>&1; then echo "ok $slug"; else echo "FAIL $slug attach"; fails=$((fails + 1)); fi
+done
+(agent-warm "${NGISA_WARM:-1}" >/dev/null 2>&1 </dev/null &)
+exit "$fails"
+EOF
+
+cat > ~/bin/ngisa-collect <<'EOF'
+#!/usr/bin/env bash
+# ngisa-collect <slug> <session> <base> <branch>: on a worker's idle notice. Reads the result, stamps, records the row, closes the pane when ok.
+set -uo pipefail
+if (( $# != 4 )); then echo "usage: ngisa-collect <slug> <session> <base> <branch>" >&2; exit 2; fi
+slug=$1 session=$2 base=$3 branch=$4
+top=$(git worktree list --porcelain | awk 'NR==1 {print substr($0,10)}')
+repo=$(basename "$top")
+fails=0
+wt=
+if [[ $session =~ ^"$repo"-warm-([0-9]+)$ ]]; then
+  wt="$top/.claude/worktrees/warm-${BASH_REMATCH[1]}"
+else
+  wt=$(git worktree list --porcelain | awk -v b="refs/heads/$branch" '/^worktree /{p=substr($0,10)} $1=="branch" && $2==b {print p; exit}')
+fi
+res=
+if [[ -n $wt && -d $wt ]] && res=$(worker-result "$wt" "$base" 2>&1); then
+  printf '%s\n' "$res"
+else
+  echo "ngisa-collect: no readable worktree for $session ($branch)"
+  fails=$((fails + 1)); res=
+fi
+ngisa-report mark "$slug" report >/dev/null 2>&1 || fails=$((fails + 1))
+state=$(python3 -I -c '
+import re, sys
+want = sys.argv[1]
+text = sys.stdin.read()
+def field(name, body):
+    lines = body.splitlines()
+    for i, ln in enumerate(lines):
+        if ln.startswith(name + ":"):
+            parts = [ln[len(name) + 1:].strip()]
+            for nxt in lines[i + 1:]:
+                if not nxt.strip() or nxt.startswith("---") or re.match(r"[A-Za-z][A-Za-z_-]*:", nxt):
+                    break
+                parts.append(nxt.strip())
+            return " ".join(x for x in parts if x)
+    return None
+m = re.search(r"^commits: (\d+)", text, re.M)
+if not m or m.group(1) == "0":
+    print("blocked"); sys.exit()
+dirty = re.search(r"^dirty: (\w+)", text, re.M)
+br = re.search(r"^branch: (.*)$", text, re.M)
+if not dirty or dirty.group(1) != "no" or not br or br.group(1).strip() != want:
+    print("blocked"); sys.exit()
+body = text.split("--- body", 1)[-1].split("--- stat", 1)[0]
+checks, asks = field("checks", body), field("asks", body)
+if checks is None or asks is None:
+    print("blocked"); sys.exit()
+if asks.lower().strip().rstrip(".") not in ("none", ""):
+    print("blocked"); sys.exit()
+t = checks.lower()
+if not t or any(a != b for a, b in re.findall(r"(\d+)\s*/\s*(\d+)", t)):
+    print("fail"); sys.exit()
+t = re.sub(r"\S*[/\\]\S*|\S+\.(dart|php|js|ts|py)\b", " ", t)
+t = re.sub(r"\b(fail\w*|error\w*)\s*[:=]\s*0\b", " ", t)
+t = re.sub(r"\b(0|no|zero|without)\s+(new\s+)?(fail\w*|error\w*|red)\b", " ", t)
+red = r"\bfail\w*|\berror\w*|\bred\b|exit[= ]\s*[1-9]|\bnot (green|pass\w*|clean|ok)|timed? ?out|timeout|\bbroke\w*|\bbroken|cannot|can.t|could not|unable|not found|no such|\bcrash\w*|\babort\w*"
+if re.search(red, t):
+    print("fail")
+elif re.search(r"\b(pass\w*|green|clean|ok|success\w*)\b|exit=0\b", t):
+    print("ok")
+else:
+    print("fail")
+' "$branch" <<<"$res")
+echo "state: $state"
+ngisa-report set "$slug" --base "$base" --branch "$branch" --state "$state" || fails=$((fails + 1))
+if [[ $state == ok ]]; then agent-wall.sh --close "$session" >/dev/null 2>&1 || fails=$((fails + 1)); fi
+exit "$fails"
 EOF
 
 cat > ~/bin/agent-tail <<'EOF'
@@ -1706,7 +1989,7 @@ case $url in
 esac
 EOF
 
-chmod +x ~/bin/agent-tail ~/bin/ngisa-guard ~/bin/real-init ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/agent-view ~/bin/ngisa-statusline ~/bin/worktree-include ~/bin/caveman-ultra-hook ~/bin/agent-pr ~/bin/ngisa-report ~/bin/agent-warm ~/bin/worker-result
+chmod +x ~/bin/worker-ctx ~/bin/worker-retire ~/bin/ngisa-start ~/bin/ngisa-spawned ~/bin/ngisa-collect ~/bin/agent-tail ~/bin/ngisa-guard ~/bin/real-init ~/bin/agent-init ~/bin/make-lab ~/bin/repo-tab ~/bin/agent-wall.sh ~/bin/agent-view ~/bin/ngisa-statusline ~/bin/worktree-include ~/bin/caveman-ultra-hook ~/bin/agent-pr ~/bin/ngisa-report ~/bin/agent-warm ~/bin/worker-result
 which agent-tail real-init ngisa-guard make-lab repo-tab agent-wall.sh agent-view ngisa-statusline worktree-include agent-pr caveman-ultra-hook ngisa-report agent-warm worker-result      # all fourteen must print a path
 ```
 

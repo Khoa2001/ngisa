@@ -60,6 +60,20 @@ class ImplementerTextTest(unittest.TestCase):
     def test_no_reformat_rule(self):
         self.assertEqual(self.text.count("Do not reformat code you did not change: if a formatter rewrites other lines, undo those hunks before committing."), 2)
 
+    def test_call_pattern_and_output_trimming(self):
+        for needle in ("Call pattern for quick mode (target 5 to 6 requests; direct mode keeps red first and then uses steps 3 and 4; a multi-step task runs it once per numbered step):",
+                       "1) Warm start: ONE Bash call `git checkout -B <name> <ref>` first. Read the files you need only after it, never before",
+                       "2) ONE turn, parallel Write/Edit calls for all listed files.",
+                       "3) ONE Bash call for all listed checks: `log=$(mktemp); rc=0; { <check 1> || rc=1; <check 2> || rc=1; } > \"$log\" 2>&1; echo \"exit=$rc\"; tail -n 40 \"$log\"`.",
+                       "A red result: also run `grep -n -m 20 -E 'FAIL|Error|error:' \"$log\"`, fix, re-run the chain.",
+                       "4) ONE Bash call to commit: `git add` the listed paths, `git commit` with the body lines.",
+                       "Plan mode keeps its own procedure."):
+            self.assertIn(needle, self.text)
+        self.assertNotIn("(<check 1>; <check 2>)", self.text)
+
+    def test_reused_worker_rule(self):
+        self.assertIn("A reused worker (it already did an earlier task): start from this Base ref, ignore the earlier task's scope, touch only this task's listed paths.", self.text)
+
     def test_no_stack_tools(self):
         low = self.text.lower()
         for word in ("flutter", "fvm", "phpunit"):
@@ -79,24 +93,64 @@ class OrchestratingTextTest(unittest.TestCase):
         self.assertNotIn("chain them", self.text)
 
     def test_required(self):
-        for needle in ("notify_when_idle", "--attach", "agent-warm 1",
-                       "Branch:", "worker-result"):
+        for needle in ("notify_when_idle", "ngisa-spawned", "--need N",
+                       "Branch:", "ngisa-collect", "ngisa-start"):
             self.assertIn(needle, self.text)
         self.assertNotIn("git -C", self.text)
 
     def test_new_rules(self):
         t = self.text
-        self.assertIn('message: "Branch: <name>. Base: <ref>. <task text>"', t)
-        self.assertIn("git rev-parse HEAD", t)
+        self.assertIn('message: "Branch: <name>. Base: <base>. <task text>"', t)
+        self.assertIn("`base: <sha>`", t)
         self.assertNotIn("git log -1 --format=%H", t)
         self.assertIn("state `done` or `idle`", t)
-        self.assertIn("prints `branch: warm/N`", t)
+        self.assertIn("`branch=warm/N`", t)
         self.assertIn("git worktree list --porcelain", t)
         self.assertIn("no `checks:` line", t)
         self.assertIn("never `ok`", t)
         self.assertIn("carries `notify_when_idle: true`", t)
         self.assertNotIn("claude agents --cwd", t)
         self.assertNotRegex(t, r"claude agents(?! --json)")
+
+    def test_reuse_and_retire_rules(self):
+        t = self.text
+        for needle in ("worker-ctx", "worker-retire", "closes the pane only for `ok`", "# Compact instructions",
+                       "`ctx` under 100k", "`idle` under 55 min", "`tasks` under 3",
+                       
+                       "Unknown last paths: not reusable.",
+                       "end a worker only with `worker-retire`"):
+            self.assertIn(needle, t)
+        for raw in ("claude stop", "claude rm"):
+            for line in t.splitlines():
+                if raw in line:
+                    self.assertTrue(line.startswith("Never:") or line.lstrip().startswith("delete branches"), line)
+        self.assertTrue(t.rstrip().endswith("unknown last paths mean: not reusable."))
+        # review fixes: no contradiction on name reuse, dirty check through worker-result, dependent Base for reuse
+        self.assertIn("never give a NEW assignment a name already on it", t)
+        self.assertNotIn("never reuse a name on it this run", t)
+        self.assertIn("its `dirty=no`", t)
+        self.assertNotIn("shows a clean tree", t)
+        self.assertIn("A task that depends on a worker's earlier task gets `Base:` = that task's branch name, for a reused or a fresh worker.", t)
+
+
+    def test_cost_cut_rules(self):
+        t = self.text
+        for needle in ("`ngisa-start`", "`ngisa-spawned", "`ngisa-collect", "one task: run it in plain Claude",
+                       "Plan-mode tasks take the cold path and never reuse a worker.",
+                       "all in one turn",
+                       "N = number of quick/direct tasks (max 3)",
+                       "do not start cold meanwhile",
+                       "In the same turn as `ngisa-start`, run `ToolSearch` `select:SendMessage`",
+                       "do not re-run `ngisa-report set` or `agent-wall.sh --close`",
+                       "not a relay or follow-up to a running worker",
+                       "size it in one line first",
+                       "After an ask is answered, an override to `ok`, or a merge: `agent-wall.sh --close <session>`",
+                       "lean workers have no skills"):
+            self.assertIn(needle, t)
+        self.assertLessEqual(len(t.encode()), 10800)  # ruling: the 80% target was dropped (the file is ~1% of the tokens); it must not grow past the pre-cost-cut 10.7 KB
+        for old in ("`ngisa-report mark <slug> report` at the worker's idle notice.",
+                    "agent-warm 1 >/dev/null 2>&1 &"):
+            self.assertNotIn(old, t)
 
     def test_removed(self):
         for needle in ("When a worker's report arrives",
@@ -152,6 +206,11 @@ class SettingsTextTest(unittest.TestCase):
         for e in perms["allow"]:
             self.assertFalse(e.startswith("Bash(git -C"))
         self.assertIn("Bash(git push:*)", perms["deny"])
+        for e in ("Bash(worker-ctx:*)", "Bash(worker-retire:*)", "Bash(ngisa-start:*)", "Bash(ngisa-spawned:*)", "Bash(ngisa-collect:*)"):
+            self.assertIn(e, perms["allow"])
+        for e in perms["allow"]:
+            for raw in ("Bash(claude stop", "Bash(claude rm", "Bash(git worktree remove"):
+                self.assertFalse(e.startswith(raw), e)
 
 
 if __name__ == "__main__":

@@ -82,6 +82,13 @@ class AgentWarmTest(unittest.TestCase):
             self.assertIn(f"warm demo-warm-{i} started", r.stdout)
             self.assertIn("warm free: 0", r.stdout)
 
+    def test_warm_start_has_lean_flags_after_prompt(self):
+        r = self.run_cli("1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        line = self.starts()[0]
+        self.assertTrue(line.endswith("--strict-mcp-config --disable-slash-commands --setting-sources project,local --tools Bash,Edit,Write,Read,Glob,Grep"), line)
+        self.assertLess(line.index("WARM-UP"), line.index("--tools"))
+
     def test_cap_at_three(self):
         r = self.run_cli("9")
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -114,6 +121,17 @@ class AgentWarmTest(unittest.TestCase):
         self.assertIn("warm free: 0", r.stdout)
         self.assertEqual(self.started_names(), ["demo-warm-2"])
 
+    def test_retired_index_not_reused(self):
+        for i in (1, 2, 3):
+            self.make_warm(i, used=True)
+        self.set_agents(["demo-warm-1", "demo-warm-2", "demo-warm-3"])
+        r = self.run_cli("1")
+        self.assertEqual(self.started_names(), ["demo-warm-4"], r.stderr)
+        # two workers retired (claude rm drops them from the list); the next index must still be new
+        self.set_agents(["demo-warm-1", "demo-warm-2"])
+        r = self.run_cli("1")
+        self.assertEqual(self.started_names()[-1], "demo-warm-5", r.stderr)
+
     def test_exited_ignored_but_index_not_reused(self):
         self.make_warm(1)
         self.make_warm(2)
@@ -123,13 +141,43 @@ class AgentWarmTest(unittest.TestCase):
         self.assertIn("warm free: 0", r.stdout)
         self.assertEqual(self.started_names(), ["demo-warm-3", "demo-warm-4"])
 
-    def test_blocked_and_working_not_free(self):
+    def test_blocked_not_free_working_on_warm_branch_is_pending(self):
         self.make_warm(1)
         self.make_warm(2)
         self.set_agents([("demo-warm-1", "blocked"), ("demo-warm-2", "working")])
         r = self.run_cli("1")
         self.assertIn("warm free: 0", r.stdout)
-        self.assertEqual(self.started_names(), ["demo-warm-3"])
+        self.assertIn("warm pending: 1", r.stdout)
+        self.assertEqual(self.started_names(), [])
+
+    def test_working_on_task_branch_is_not_pending(self):
+        self.make_warm(1, used=True)
+        self.set_agents([("demo-warm-1", "working")])
+        r = self.run_cli("1")
+        self.assertIn("warm pending: 0", r.stdout)
+        self.assertEqual(self.started_names(), ["demo-warm-2"])
+
+    def test_working_without_worktree_yet_is_pending(self):
+        self.set_agents([("demo-warm-1", "working")])
+        r = self.run_cli("1")
+        self.assertIn("warm pending: 1", r.stdout)
+        self.assertEqual(self.started_names(), [])
+
+    def test_topup_then_refill_does_not_overstart(self):
+        self.make_warm(1)
+        self.set_agents([("demo-warm-1", "done")])
+        self.run_cli("3")  # starts 2, they are still warming
+        names = self.started_names()
+        self.set_agents([("demo-warm-1", "done")] + [(n, "working") for n in names])
+        self.run_cli("1")
+        self.assertEqual(self.started_names(), names)
+
+    def test_run_from_linked_worktree_uses_main_checkout(self):
+        wt = os.path.join(self.repo, ".claude", "worktrees", "integration")
+        self.git("worktree", "add", wt, "-b", "integ", "HEAD")
+        r = self.run_cli("1", cwd=wt)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.started_names(), ["demo-warm-1"])
 
     def test_idle_state_counts_as_free(self):
         self.make_warm(1)
